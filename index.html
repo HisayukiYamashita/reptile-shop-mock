@@ -5,86 +5,100 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>爬虫類ショップ 在庫・販売管理（イメージ）</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cantarell:wght@400;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#f5f6f3; --surface:#fff; --ink:#1f2a24; --muted:#6b776f; --line:#e1e5df;
-  --brand:#2f6b4f; --brand-soft:#e6f0ea; --accent:#b7791f; --danger:#b83a3a; --danger-soft:#f8e7e7;
-  --warn-soft:#fdf3e0; --radius:10px;
+  --bg:#171a1d; --surface:#1f2327; --surface2:#262b30; --ink:#e9e6e0; --muted:#9b9890; --line:#30353b;
+  --brand:#a8936f; --brand-strong:#997f55; --brand-soft:rgba(168,147,111,.14); --accent:#d9a441; --danger:#d9695f; --danger-soft:rgba(217,105,95,.14);
+  --warn-soft:rgba(217,164,65,.14); --radius:4px; --en:"Cantarell","Noto Sans JP",sans-serif;
 }
 *{box-sizing:border-box}
-body{margin:0;font-family:"Noto Sans JP",system-ui,sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.6}
-header{background:var(--brand);color:#fff;padding:12px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-header h1{font-size:17px;margin:0;font-weight:700}
-header .tag{font-size:11px;background:rgba(255,255,255,.18);padding:2px 8px;border-radius:99px}
+body{margin:0;letter-spacing:.03em;font-family:"Noto Sans JP",system-ui,sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.6}
+header{background:#111316;color:#fff;padding:14px 24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+header .logo{height:46px;width:auto;display:block}
+header .ttl{display:flex;flex-direction:column;line-height:1.3}
+header h1{font-family:var(--en);font-size:15px;margin:0;font-weight:700;letter-spacing:.2em}
+header .sub{font-size:11px;color:var(--muted);letter-spacing:.1em}
+header .tag{font-size:10px;border:1px solid var(--brand);color:var(--brand);padding:2px 8px;letter-spacing:.1em}
 header .sp{flex:1}
-header button{background:transparent;border:1px solid rgba(255,255,255,.5);color:#fff;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer}
-nav{background:var(--surface);border-bottom:1px solid var(--line);display:flex;overflow-x:auto;padding:0 12px;position:sticky;top:0;z-index:5}
-nav button{border:0;background:none;padding:12px 14px;font:inherit;color:var(--muted);cursor:pointer;white-space:nowrap;border-bottom:3px solid transparent}
-nav button.on{color:var(--brand);border-bottom-color:var(--brand);font-weight:700}
-main{max-width:1180px;margin:0 auto;padding:20px 16px 60px}
+header button{background:transparent;border:1px solid rgba(255,255,255,.35);color:#fff;border-radius:2px;padding:6px 14px;font-size:11px;cursor:pointer;letter-spacing:.1em;font-family:var(--en)}
+header button:hover{border-color:var(--brand);color:var(--brand)}
+nav{background:#111316;border-bottom:1px solid var(--line);display:flex;overflow-x:auto;padding:0 16px;position:sticky;top:0;z-index:5}
+nav button{border:0;background:none;padding:12px 16px 10px;font:inherit;color:var(--ink);cursor:pointer;white-space:nowrap;border-bottom:2px solid transparent;display:flex;flex-direction:column;align-items:center;gap:1px}
+nav button b{font-family:var(--en);font-size:13px;letter-spacing:.18em;font-weight:400;pointer-events:none}
+nav button small{font-size:10px;color:var(--muted);pointer-events:none}
+nav button:hover b{color:var(--brand)}
+nav button.on{border-bottom-color:var(--brand)} nav button.on b{color:var(--brand)}
+@media(max-width:640px){header{padding:10px 16px;gap:10px;flex-wrap:nowrap}header .logo{height:36px}header h1{font-size:13px;letter-spacing:.14em}header .tag{display:none}header button{padding:5px 8px;font-size:10px}h2 .en{font-size:22px}}
+main{max-width:1180px;margin:0 auto;padding:28px 16px 60px}
 section{display:none} section.on{display:block}
-h2{font-size:18px;margin:0 0 4px} .lead{color:var(--muted);margin:0 0 16px;font-size:13px}
+h2{font-size:18px;margin:0 0 4px;font-weight:500;letter-spacing:.06em}
+h2 .en{display:block;font-family:var(--en);font-size:26px;letter-spacing:.2em;color:var(--ink);font-weight:400;line-height:1.2}
+h2 .en::after{content:"";display:block;width:36px;height:1px;background:var(--brand);margin:8px 0 6px} .lead{color:var(--muted);margin:0 0 16px;font-size:13px}
 .grid{display:grid;gap:12px}
 .kpis{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px}
-.kpi .l{font-size:12px;color:var(--muted)} .kpi .v{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums} .kpi .s{font-size:12px;color:var(--muted)}
+.kpi .l{font-size:12px;color:var(--muted);letter-spacing:.06em} .kpi .v{font-family:var(--en);font-size:24px;font-weight:700;letter-spacing:.02em;font-variant-numeric:tabular-nums} .kpi .s{font-size:12px;color:var(--muted)}
 .two{grid-template-columns:1.4fr 1fr} @media(max-width:820px){.two{grid-template-columns:1fr}}
-.card h3{font-size:14px;margin:0 0 10px}
+.card h3{font-size:13px;margin:0 0 12px;font-weight:500;letter-spacing:.08em;color:var(--brand)}
 table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
 th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
-th{font-size:12px;color:var(--muted);font-weight:500;background:#fafbf9;position:sticky;top:0}
+th{font-size:11px;color:var(--brand);font-weight:500;letter-spacing:.06em;background:var(--surface2);position:sticky;top:0}
 td.n,th.n{text-align:right}
 .tbl{overflow:auto;max-height:520px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
 .pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:99px;background:var(--brand-soft);color:var(--brand)}
-.pill.old{background:var(--warn-soft);color:var(--accent)} .pill.dead{background:var(--danger-soft);color:var(--danger)} .pill.sold{background:#eceeec;color:var(--muted)}
+.pill.old{background:var(--warn-soft);color:var(--accent)} .pill.dead{background:var(--danger-soft);color:var(--danger)} .pill.sold{background:rgba(255,255,255,.06);color:var(--muted)}
 .bars{display:flex;align-items:flex-end;gap:6px;height:170px;padding-top:10px}
 .bar{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11px;color:var(--muted)}
 .bar i{display:block;width:100%;background:var(--brand);border-radius:4px 4px 0 0;min-height:2px}
-.bar i.gp{background:#8fb8a2}
+.bar i.gp{background:#5d5446}
 .hb{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:12px}
-.hb span:first-child{width:86px;color:var(--muted)} .hb .t{flex:1;background:#eef1ed;border-radius:4px;height:14px;overflow:hidden}
+.hb span:first-child{width:86px;color:var(--muted)} .hb .t{flex:1;background:var(--surface2);border-radius:4px;height:14px;overflow:hidden}
 .hb .t i{display:block;height:100%;background:var(--brand)} .hb b{width:90px;text-align:right;font-weight:500}
 .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
-input,select{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink)}
-.btn{font:inherit;padding:8px 14px;border-radius:6px;border:1px solid var(--brand);background:var(--brand);color:#fff;cursor:pointer;font-weight:500}
-.btn.ghost{background:#fff;color:var(--brand)} .btn.sm{padding:3px 10px;font-size:12px}
+input,select{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:2px;background:var(--surface2);color:var(--ink);color-scheme:dark}
+input:focus,select:focus{outline:1px solid var(--brand);border-color:var(--brand)}
+.btn{font:inherit;padding:9px 18px;border-radius:2px;border:1px solid var(--brand);background:var(--brand);color:#111316;cursor:pointer;font-weight:700;letter-spacing:.1em}
+.btn:hover{background:var(--brand-strong);border-color:var(--brand-strong)}
+.btn.ghost{background:transparent;color:var(--brand)} .btn.ghost:hover{background:var(--brand-soft)} .btn.sm{padding:3px 10px;font-size:12px}
 .btn:disabled{opacity:.4;cursor:default}
 .form{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px 14px}
 .form label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted)}
 .pays{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 0}
-.pays button{padding:12px 6px;border:1px solid var(--line);border-radius:8px;background:#fff;font:inherit;cursor:pointer}
+.pays button{padding:12px 6px;border:1px solid var(--line);border-radius:2px;background:var(--surface2);color:var(--ink);font:inherit;cursor:pointer}
 .pays button.on{border-color:var(--brand);background:var(--brand-soft);color:var(--brand);font-weight:700}
-.total{font-size:26px;font-weight:700;text-align:right}
-.note{font-size:12px;color:var(--muted);background:#fafbf9;border:1px dashed var(--line);border-radius:8px;padding:10px 12px;margin-top:12px}
-.diff-ng{color:var(--danger);font-weight:700} .diff-ok{color:var(--brand)}
+.total{font-family:var(--en);font-size:30px;font-weight:700;text-align:right;color:var(--brand)}
+.note{font-size:12px;color:var(--muted);background:rgba(255,255,255,.02);border:1px dashed var(--line);border-radius:2px;padding:10px 12px;margin-top:12px}
+.diff-ng{color:var(--danger);font-weight:700} .diff-ok{color:#8fb39a}
 pre{background:#1f2a24;color:#dfe9e2;padding:12px;border-radius:8px;overflow:auto;font-size:11.5px;max-height:360px}
 .flow{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px;margin:6px 0 14px}
 .flow span{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:6px 10px}
 .flow b{color:var(--muted)}
-.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;opacity:0;transition:.3s;pointer-events:none}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--brand);color:#111316;font-weight:700;padding:10px 18px;border-radius:8px;font-size:13px;opacity:0;transition:.3s;pointer-events:none}
 .toast.on{opacity:1}
 .cart td{white-space:normal}
 </style>
 </head>
 <body>
 <header>
-  <h1>🦎 爬虫類ショップ 在庫・販売管理</h1><span class="tag">イメージ版・ダミーデータ</span>
-  <span class="sp"></span><button onclick="resetDemo()">デモデータを初期化</button>
+  <img class="logo" src="https://www.swag-baller.com/assets/img/common/logo_wh@2x.png" alt="SWAG BALLER" onerror="this.style.display='none'">
+  <div class="ttl"><h1>STOCK &amp; SALES</h1><span class="sub">在庫・販売管理</span></div>
+  <span class="tag">DEMO・ダミーデータ</span>
+  <span class="sp"></span><button onclick="resetDemo()">RESET DEMO</button>
 </header>
 <nav id="nav">
-  <button data-t="dash" class="on">ダッシュボード</button>
-  <button data-t="stock">在庫（個体台帳）</button>
-  <button data-t="pos">販売登録</button>
-  <button data-t="buy">仕入登録</button>
-  <button data-t="daily">日計・入金照合</button>
-  <button data-t="mf">マネーフォワード取込</button>
+  <button data-t="dash" class="on"><b>DASHBOARD</b><small>ダッシュボード</small></button>
+  <button data-t="stock"><b>STOCK</b><small>在庫（個体台帳）</small></button>
+  <button data-t="pos"><b>SALES</b><small>販売登録</small></button>
+  <button data-t="buy"><b>PURCHASE</b><small>仕入登録</small></button>
+  <button data-t="daily"><b>DAILY</b><small>日計・入金照合</small></button>
+  <button data-t="mf"><b>EXPORT</b><small>MF取込</small></button>
 </nav>
 <main>
 
 <!-- ダッシュボード -->
 <section id="dash" class="on">
-  <h2>ダッシュボード</h2>
+  <h2><span class="en">DASHBOARD</span>ダッシュボード</h2>
   <p class="lead">今月の数字と、在庫・未入金の状態をひと目で。Excelの「金額集計行」「利益」「在庫」列を自動で集計した画面です。</p>
   <div class="grid kpis" id="kpis"></div>
   <div class="grid two" style="margin-top:12px">
@@ -100,7 +114,7 @@ pre{background:#1f2a24;color:#dfe9e2;padding:12px;border-radius:8px;overflow:aut
 
 <!-- 在庫 -->
 <section id="stock">
-  <h2>在庫（個体台帳）</h2>
+  <h2><span class="en">STOCK</span>在庫（個体台帳）</h2>
   <p class="lead">生体は1匹ごとに管理番号を振り、仕入原価と販売価格をひも付けます。Excelの「生体（購入）」「生体（販売）」の2シートを1つにまとめたイメージです。</p>
   <div class="toolbar">
     <input id="q" placeholder="品目・仕入先で検索" oninput="renderStock()">
@@ -113,7 +127,7 @@ pre{background:#1f2a24;color:#dfe9e2;padding:12px;border-radius:8px;overflow:aut
 
 <!-- POS -->
 <section id="pos">
-  <h2>販売登録</h2>
+  <h2><span class="en">SALES</span>販売登録</h2>
   <p class="lead">レジ代わりの画面。個体を選ぶと原価が自動で入り、粗利がその場で出ます。決済手段を押すだけで、日計表と会計データに反映されます。</p>
   <div class="grid two">
     <div class="card">
@@ -144,7 +158,7 @@ pre{background:#1f2a24;color:#dfe9e2;padding:12px;border-radius:8px;overflow:aut
 
 <!-- 仕入 -->
 <section id="buy">
-  <h2>仕入登録</h2>
+  <h2><span class="en">PURCHASE</span>仕入登録</h2>
   <p class="lead">同じ仕入先からまとめて入った個体を一度に登録できます。1匹ずつ管理Noが振られ、そのまま在庫に並びます。</p>
   <div class="card">
     <div class="form">
@@ -166,7 +180,7 @@ pre{background:#1f2a24;color:#dfe9e2;padding:12px;border-radius:8px;overflow:aut
 
 <!-- 日計 -->
 <section id="daily">
-  <h2>日計・入金照合</h2>
+  <h2><span class="en">DAILY REPORT</span>日計・入金照合</h2>
   <p class="lead">Excelの「日計売上」「台帳と日計の比較」を自動化した画面。決済会社の入金額を入れると、手数料と差異が出ます。</p>
   <div class="toolbar"><label style="font-size:12px;color:var(--muted)">対象月 <select id="dMonth" onchange="renderDaily()"></select></label></div>
   <div class="card"><h3>日計（決済手段別）</h3>
@@ -180,7 +194,7 @@ pre{background:#1f2a24;color:#dfe9e2;padding:12px;border-radius:8px;overflow:aut
 
 <!-- MF -->
 <section id="mf">
-  <h2>マネーフォワード クラウド会計 取込</h2>
+  <h2><span class="en">EXPORT</span>マネーフォワード クラウド会計 取込</h2>
   <p class="lead">売上・仕入・入金・期末棚卸を、MFの「仕訳帳インポート」形式のCSVで出力します。月1回ダウンロード→MFで取込、の1ステップにするのが狙いです。</p>
   <div class="flow"><span>販売・仕入の登録</span><b>→</b><span>日次×決済手段で集計</span><b>→</b><span>仕訳CSV出力</span><b>→</b><span>MF 仕訳帳インポート</span></div>
   <div class="grid two">
@@ -396,7 +410,7 @@ function renderDaily(){
   const days=[...new Set(S.map(x=>x.date))].sort();
   $('dHead').innerHTML=`<tr><th>日付</th><th class="n">生体</th><th class="n">餌・用品</th>${PAYS.map(p=>`<th class="n">${p.n.replace('（カード）','')}</th>`).join('')}<th class="n">合計</th></tr>`;
   const line=(label,arr,b)=>{const s=k=>arr.filter(x=>x.pay===k).reduce((t,x)=>t+x.price,0);const tot=arr.reduce((t,x)=>t+x.price,0);
-    return`<tr${b?' style="font-weight:700;background:#fafbf9"':''}><td>${label}</td><td class="n">${num(arr.filter(x=>x.kind==='生体').reduce((t,x)=>t+x.price,0))}</td><td class="n">${num(arr.filter(x=>x.kind!=='生体').reduce((t,x)=>t+x.price,0))}</td>${PAYS.map(p=>`<td class="n">${s(p.k)?num(s(p.k)):''}</td>`).join('')}<td class="n">${num(tot)}</td></tr>`};
+    return`<tr${b?' style="font-weight:700;background:var(--surface2);color:var(--brand)"':''}><td>${label}</td><td class="n">${num(arr.filter(x=>x.kind==='生体').reduce((t,x)=>t+x.price,0))}</td><td class="n">${num(arr.filter(x=>x.kind!=='生体').reduce((t,x)=>t+x.price,0))}</td>${PAYS.map(p=>`<td class="n">${s(p.k)?num(s(p.k)):''}</td>`).join('')}<td class="n">${num(tot)}</td></tr>`};
   $('dRows').innerHTML=days.map(d=>line(d.slice(5),S.filter(x=>x.date===d))).join('')+line('月計',S,true);
   $('recon').innerHTML=recon(mo).map(r=>{const ng=Math.abs(r.diff)>0.3;return`<tr><td>${r.p.n}</td><td class="n">${num(r.sales)}</td><td class="n">${num(r.dep)}</td><td class="n">${num(r.fee)}</td><td class="n">${r.rate.toFixed(2)}%</td><td class="n">${r.diff>0?'+':''}${r.diff.toFixed(2)}pt</td><td class="${ng?'diff-ng':'diff-ok'}">${ng?'要確認':'OK'}</td></tr>`}).join('');
 }
