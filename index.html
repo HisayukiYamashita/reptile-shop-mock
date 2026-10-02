@@ -92,6 +92,7 @@ pre{background:#1f2a24;color:#dfe9e2;padding:12px;border-radius:8px;overflow:aut
   <button data-t="pos"><b>SALES</b><small>販売登録</small></button>
   <button data-t="buy"><b>PURCHASE</b><small>仕入登録</small></button>
   <button data-t="daily"><b>DAILY</b><small>日計・入金照合</small></button>
+  <button data-t="check"><b>CHECK</b><small>売上チェック</small></button>
   <button data-t="mf"><b>EXPORT</b><small>MF取込</small></button>
 </nav>
 <main>
@@ -190,6 +191,25 @@ pre{background:#1f2a24;color:#dfe9e2;padding:12px;border-radius:8px;overflow:aut
     <div class="tbl"><table><thead><tr><th>決済会社</th><th class="n">当月の売上計上</th><th class="n">入金額</th><th class="n">手数料</th><th class="n">手数料率</th><th class="n">差異</th><th>判定</th></tr></thead><tbody id="recon"></tbody></table></div>
     <div class="note">入金額は本番では銀行明細（またはマネーフォワードの口座連携）から取り込む想定。いまはダミーで、標準手数料率から外れたものを「要確認」にしています。</div>
   </div>
+</section>
+
+<!-- 売上チェック -->
+<section id="check">
+  <h2><span class="en">CHECK</span>売上チェック（決済データ照合）</h2>
+  <p class="lead">USEN・STORES・PayPayの管理画面から取引データ（CSV）をダウンロードして読み込むと、台帳の売上と1件ずつ突き合わせます。「USENとSTORESの付け間違い」「金額の打ち間違い」「登録漏れ」をその場で見つけて、ボタン1つで直せます。</p>
+  <div class="card">
+    <div class="form">
+      <label>決済会社<select id="cProv" onchange="CK&&renderCheck()"></select></label>
+      <label>取引データ（CSV）<input type="file" accept=".csv,text/csv" onchange="onCheckFile(this)"></label>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" onclick="trySample()">サンプルで試す</button><button class="btn ghost" onclick="dlSample()">サンプルCSVをダウンロード</button></div>
+    <div id="cMap"></div>
+  </div>
+  <div class="grid kpis" id="cKpis" style="margin-top:12px"></div>
+  <div class="card" style="margin-top:12px"><h3>照合結果（要確認を上に表示）</h3>
+    <div class="tbl"><table><thead><tr><th>判定</th><th>決済データ</th><th>台帳</th><th>内容</th><th></th></tr></thead><tbody id="cRows"></tbody></table></div>
+  </div>
+  <div class="note"><b>判定のしかた：</b>①同じ日・同じ金額・同じ決済手段なら「一致」 ②同じ金額で日付が3日以内のずれなら「日付ずれ」 ③同じ日・同じ金額で台帳の決済手段が違えば「決済手段の登録ミス」 ④同じ日で金額だけ違えば「金額違い」 ⑤どれにも当たらない決済は「台帳に登録なし」、台帳だけにある売上は「決済データになし」。取消・返金は元の売上と相殺します。<br>CSVの列名は決済会社ごとに自動で判定します。実際のファイルで列名が違っても、割り当てを選び直せば使えます。</div>
 </section>
 
 <!-- MF -->
@@ -302,8 +322,8 @@ function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','
 /* 全売上明細（生体＋餌）を平たくする */
 function allSales(){
   const out=[];
-  DB.animals.forEach(a=>{if(a.sold)out.push({date:a.sold.date,kind:'生体',label:`#${a.id} ${a.sp} ${a.name}${a.sex}`,price:a.sold.price,cost:a.cost,pay:a.sold.pay,cust:a.sold.cust})});
-  DB.goodsSales.forEach(g=>out.push({date:g.date,kind:'餌・用品',label:`${g.n}×${g.q}`,price:g.price,cost:g.cost,pay:g.pay}));
+  DB.animals.forEach(a=>{if(a.sold)out.push({date:a.sold.date,kind:'生体',label:`#${a.id} ${a.sp} ${a.name}${a.sex}`,price:a.sold.price,cost:a.cost,pay:a.sold.pay,cust:a.sold.cust,ref:{t:'a',id:a.id},tx:a.sold.tx||'a'+a.id})});
+  DB.goodsSales.forEach((g,i)=>out.push({date:g.date,kind:'餌・用品',label:`${g.n}×${g.q}`,price:g.price,cost:g.cost,pay:g.pay,ref:{t:'g',i},tx:g.tx||'g'+i}));
   return out.sort((a,b)=>a.date.localeCompare(b.date));
 }
 function months(){const s=new Set(allSales().map(x=>ym(x.date)));return[...s].sort().reverse()}
@@ -371,10 +391,93 @@ function addAnimal(){const id=+$('posAnimal').value,p=+$('posPrice').value;if(!i
   const a=DB.animals.find(x=>x.id===id);cart.push({aid:id,label:`#${a.id} ${a.sp} ${a.name}${a.sex}`,price:p,cost:a.cost});$('posPrice').value='';renderPOS()}
 function addGoods(){const g=GOODS[+$('posGoods').value],q=Math.max(1,+$('posQty').value||1);cart.push({g:g.n,q,label:`${g.n}×${q}`,price:g.p*q,cost:g.c*q});renderPOS()}
 function checkout(){
-  const cust=$('posCust').value.trim();
-  cart.forEach(c=>{if(c.aid){DB.animals.find(a=>a.id===c.aid).sold={date:TODAY,price:c.price,pay:curPay,cust}}else DB.goodsSales.push({date:TODAY,n:c.g,q:c.q,price:c.price,cost:c.cost,pay:curPay})});
+  const cust=$('posCust').value.trim(),tx='t'+Date.now();
+  cart.forEach(c=>{if(c.aid){DB.animals.find(a=>a.id===c.aid).sold={date:TODAY,price:c.price,pay:curPay,cust,tx}}else DB.goodsSales.push({date:TODAY,n:c.g,q:c.q,price:c.price,cost:c.cost,pay:curPay,tx})});
   const t=cart.reduce((s,c)=>s+c.price,0);cart=[];$('posCust').value='';save();renderAll();toast(`${payName(curPay)}で ${yen(t)} を登録しました`);
 }
+
+/* ===== 売上チェック（決済データ照合） ===== */
+const CK_PROV=['usen','stores','paypay'];
+let CK=null;
+function parseCSV(t){const rows=[];let row=[],f='',q=false;
+  for(let i=0;i<t.length;i++){const c=t[i];
+    if(q){if(c==='"'){if(t[i+1]==='"'){f+='"';i++}else q=false}else f+=c}
+    else if(c==='"')q=true; else if(c===','){row.push(f);f=''} else if(c==='\n'||c==='\r'){if(c==='\r'&&t[i+1]==='\n')i++;row.push(f);rows.push(row);row=[];f=''} else f+=c}
+  if(f||row.length){row.push(f);rows.push(row)}return rows.filter(r=>r.some(c=>c.trim()))}
+function decodeBuf(buf){let t=new TextDecoder('utf-8').decode(buf);if(t.includes('�'))t=new TextDecoder('shift_jis').decode(buf);return t.replace(/^﻿/,'')}
+const normDate=s=>{const m=String(s).match(/(\d{4})\D(\d{1,2})\D(\d{1,2})/);return m?`${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`:''};
+const normAmt=s=>{const v=parseFloat(String(s).replace(/[¥￥,円\s]/g,''));return isNaN(v)?0:v};
+function detectCols(h){const f=re=>h.findIndex(x=>re.test(x));
+  return{date:f(/日時|日付|取引日|決済日|売上日/),amt:f(/^(?!.*手数料).*(金額|売上額|決済額)/),status:f(/種別|ステータス|状態|区分|取引内容/),id:f(/ID|番号|伝票/i)}}
+function loadCSVText(text,name){const rows=parseCSV(text);if(rows.length<2){toast('CSVの中身が読めませんでした');return}
+  CK={head:rows[0].map(s=>s.trim()),body:rows.slice(1),name};CK.map=detectCols(CK.head);
+  const h=CK.head.join();if(/USEN|承認番号|端末/.test(h))$('cProv').value='usen';else if(/STORES|決済手数料|ステータス/.test(h))$('cProv').value='stores';else if(/PayPay|決済番号/.test(h))$('cProv').value='paypay';
+  renderCheck();toast(`${name} を読み込みました（${CK.body.length}行）`)}
+function onCheckFile(inp){const f=inp.files[0];if(!f)return;f.arrayBuffer().then(b=>loadCSVText(decodeBuf(b),f.name));inp.value=''}
+function ledgerGroups(mo){const g={};
+  allSales().filter(x=>ym(x.date)===mo).forEach(x=>{const k=x.tx;(g[k]=g[k]||{key:k,date:x.date,amt:0,pay:x.pay,items:[]});g[k].amt+=x.price;g[k].items.push(x)});
+  return Object.values(g)}
+function matchCheck(){
+  const P=$('cProv').value,m=CK.map,R=[];
+  const tx=CK.body.map((r,i)=>{const st=m.status>=0?r[m.status]:'',a=normAmt(r[m.amt]);return{i,date:normDate(r[m.date]),amt:Math.abs(a),cancel:a<0||/取消|キャンセル|返品|返金|払戻/.test(st),id:m.id>=0?r[m.id]:'',st}}).filter(t=>t.date&&t.amt);
+  const cnt={};tx.forEach(t=>cnt[ym(t.date)]=(cnt[ym(t.date)]||0)+1);const mo=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a])[0];
+  const sales=tx.filter(t=>!t.cancel),canc=tx.filter(t=>t.cancel);
+  canc.forEach(c=>{const s=sales.filter(s=>!s.void&&s.amt===c.amt&&s.date<=c.date).sort((a,b)=>b.date.localeCompare(a.date))[0];if(s){s.void=c.void=true;R.push({k:'void',t:s,c})}else R.push({k:'cancel1',t:c})});
+  const L=ledgerGroups(mo),used=new Set(),take=f=>{const g=L.find(g=>!used.has(g.key)&&f(g));if(g)used.add(g.key);return g};
+  let rest=sales.filter(s=>!s.void);
+  const step=(k,f)=>{rest=rest.filter(t=>{const g=take(x=>f(x,t));if(g){R.push({k,t,g});return false}return true})};
+  step('ok',(g,t)=>g.pay===P&&g.date===t.date&&g.amt===t.amt);
+  step('date',(g,t)=>g.pay===P&&g.amt===t.amt&&Math.abs(daysBetween(g.date,t.date))<=3);
+  step('pay',(g,t)=>g.pay!==P&&g.pay!=='bank'&&g.date===t.date&&g.amt===t.amt);
+  step('amt',(g,t)=>g.pay===P&&g.date===t.date&&t.amt>=g.amt*0.5&&t.amt<=g.amt*2);
+  rest.forEach(t=>R.push({k:'miss',t}));
+  L.filter(g=>g.pay===P&&!used.has(g.key)).forEach(g=>R.push({k:'extra',g}));
+  return{P,mo,R,tx:sales.filter(s=>!s.void),L:L.filter(g=>g.pay===P)}}
+const CK_LBL={ok:['一致','pill'],void:['取消済（相殺）','pill sold'],date:['日付ずれ','pill old'],pay:['決済手段の登録ミス','pill dead'],amt:['金額違い','pill dead'],miss:['台帳に登録なし','pill dead'],extra:['決済データになし','pill dead'],cancel1:['取消（元取引なし）','pill old']};
+function renderCheck(){
+  if(!$('cProv').options.length)$('cProv').innerHTML=CK_PROV.map(k=>`<option value="${k}">${payName(k).replace('（カード）','')}</option>`).join('');
+  if(!CK){$('cMap').innerHTML='';$('cKpis').innerHTML='';$('cRows').innerHTML='<tr><td colspan="6" style="color:var(--muted);white-space:normal">決済会社の管理画面からダウンロードしたCSVを読み込むか、「サンプルで試す」を押してください。</td></tr>';return}
+  const sel=(k,l)=>`<label>${l}<select onchange="CK.map.${k}=+this.value;renderCheck()"><option value="-1">（なし）</option>${CK.head.map((h,i)=>`<option value="${i}"${CK.map[k]===i?' selected':''}>${esc(h)}</option>`).join('')}</select></label>`;
+  $('cMap').innerHTML=`<div style="font-size:12px;color:var(--muted);margin:12px 0 6px">読み込んだファイル：${esc(CK.name)}　／　列の割り当て（自動判定・違えば選び直し）</div><div class="form">${sel('date','日付の列')}${sel('amt','金額の列')}${sel('status','取消を判定する列')}${sel('id','取引IDの列')}</div>`;
+  if(CK.map.date<0||CK.map.amt<0){$('cRows').innerHTML='<tr><td colspan="6">日付と金額の列を選んでください</td></tr>';return}
+  const M=matchCheck(),pn=payName(M.P).replace('（カード）','');
+  const sum=a=>a.reduce((t,x)=>t+x.amt,0),ng=M.R.filter(r=>!['ok','void'].includes(r.k)).length,diff=sum(M.tx)-sum(M.L);
+  $('cKpis').innerHTML=[[`${pn}の決済データ（${M.mo}）`,yen(sum(M.tx)),`${M.tx.length}件`],[`台帳の${pn}売上`,yen(sum(M.L)),`${M.L.length}件`],['差額',yen(diff),diff?'台帳の計上がずれています':'金額は一致'],['要確認',ng+'件',`一致 ${M.R.filter(r=>r.k==='ok').length}件`]]
+    .map(k=>`<div class="card kpi"><div class="l">${k[0]}</div><div class="v"${k[0]==='差額'&&diff||k[0]==='要確認'&&ng?' style="color:var(--danger)"':''}>${k[1]}</div><div class="s">${k[2]}</div></div>`).join('');
+  const ord=['pay','amt','miss','extra','date','cancel1','void','ok'];
+  const tCell=t=>t?`${t.date.slice(5)}　<b>${num(t.amt)}</b>${t.id?`<br><small style="color:var(--muted)">${esc(t.id)}</small>`:''}`:'—';
+  const gCell=g=>g?`${g.date.slice(5)}　<b>${num(g.amt)}</b>　${payName(g.pay).replace('（カード）','')}<br><small style="color:var(--muted)">${g.items.map(x=>esc(x.label)).join('、')}</small>`:'—';
+  const msg=r=>({ok:'',void:`${r.c?.date.slice(5)} に取消。売上なしで正しい`,date:`販売日 ${r.g?.date.slice(5)} と決済日 ${r.t?.date.slice(5)} がずれています`,
+    pay:`台帳は「${payName(r.g?.pay)}」で登録。決済データは${pn}です`,amt:`台帳 ${num(r.g?.amt||0)} ／ 決済 ${num(r.t?.amt||0)}（差 ${num((r.t?.amt||0)-(r.g?.amt||0))}）`,
+    miss:`${pn}で決済されたのに、台帳に売上がありません`,extra:`台帳は${pn}ですが、決済データにありません。現金など別の手段か、二重登録の可能性`,cancel1:'取消の元になる売上がファイル内にありません'}[r.k]);
+  const act=(r,i)=>r.k==='pay'?`<button class="btn sm" onclick="ckFix(${i})">${pn}に直す</button>`:r.k==='amt'&&r.g.items.length===1?`<button class="btn sm" onclick="ckFix(${i})">${num(r.t.amt)}に直す</button>`:r.k==='date'?`<button class="btn ghost sm" onclick="ckFix(${i})">決済日に合わせる</button>`:r.k==='miss'?`<button class="btn ghost sm" onclick="showTab('pos')">販売登録へ</button>`:'';
+  CK.last=M;M.R.sort((a,b)=>ord.indexOf(a.k)-ord.indexOf(b.k));
+  $('cRows').innerHTML=M.R.map((r,i)=>`<tr><td><span class="${CK_LBL[r.k][1]}">${CK_LBL[r.k][0]}</span></td><td>${tCell(r.t)}</td><td>${gCell(r.g)}</td><td style="white-space:normal;min-width:200px;font-size:12px">${esc(msg(r))}</td><td>${act(r,i)}</td></tr>`).join('');
+}
+function ckFix(i){const r=CK.last.R[i],P=CK.last.P;
+  r.g.items.forEach(x=>{const o=x.ref.t==='a'?DB.animals.find(a=>a.id===x.ref.id).sold:DB.goodsSales[x.ref.i];
+    if(r.k==='pay')o.pay=P;if(r.k==='amt')o.price=r.t.amt;if(r.k==='date')o.date=r.t.date});
+  save();renderAll();toast('台帳を修正しました')}
+function genSample(){
+  const P=$('cProv').value,r=rng(808),pick=a=>a[Math.floor(r()*a.length)];
+  const mo=['2026-08','2026-07','2026-06'].map(m=>[m,ledgerGroups(m).filter(g=>g.pay===P).length]).sort((a,b)=>b[1]-a[1])[0][0],L=ledgerGroups(mo);CK_SMO=mo;
+  let rows=L.filter(g=>g.pay===P).map(g=>({date:g.date,amt:g.amt}));
+  const twin={usen:'stores',stores:'usen',paypay:'cash'}[P],other=L.filter(g=>g.pay===twin).slice(0,2);
+  other.forEach(g=>rows.push({date:g.date,amt:g.amt}));
+  if(rows.length>4){rows.splice(1,1);const big=rows.find(x=>x.amt>=10000&&!other.some(o=>o.date===x.date&&o.amt===x.amt));if(big)big.amt+=5000;
+    const sh=rows.find((x,i)=>i>=2&&x!==big&&!other.some(o=>o.date===x.date&&o.amt===x.amt));if(sh){const d=new Date(sh.date);d.setDate(d.getDate()+1);if(ym(iso(d))===mo)sh.date=iso(d)}}
+  rows.push({date:mo+'-18',amt:2200},{date:mo+'-21',amt:4400},{date:mo+'-21',amt:4400,cancel:true});
+  rows.sort((a,b)=>a.date.localeCompare(b.date));
+  const tm=()=>`${String(10+Math.floor(r()*9)).padStart(2,'0')}:${String(Math.floor(r()*60)).padStart(2,'0')}`;
+  let head,line;
+  if(P==='usen'){head='取引日時,取引種別,カードブランド,取引金額,承認番号,端末番号';line=(x,i)=>[x.date.replace(/-/g,'/')+' '+tm()+':00',x.cancel?'取消':'売上',pick(['VISA','Mastercard','JCB','AMEX']),x.cancel?-x.amt:x.amt,String(100000+i*137).slice(-6),'T-0001']}
+  else if(P==='stores'){head='決済日時,ステータス,支払方法,決済金額,決済手数料,取引ID';line=(x,i)=>[x.date+' '+tm(),x.cancel?'取消済み':'決済完了',pick(['VISA','Mastercard','JCB']),x.cancel?-x.amt:x.amt,x.cancel?0:Math.round(x.amt*0.0324),'ST'+(880000+i)]}
+  else{head='取引日時,取引内容,取引金額,決済番号';line=(x,i)=>[x.date.replace(/-/g,'/')+' '+tm(),x.cancel?'返金':'支払い',x.cancel?-x.amt:x.amt,'0'+(4400000000+i*7)]}
+  return head+'\n'+rows.map((x,i)=>line(x,i).join(',')).join('\n');
+}
+let CK_SMO='';
+function trySample(){const t=genSample();loadCSVText(t,`サンプル_${payName($('cProv').value).replace('（カード）','')}_${CK_SMO}.csv`)}
+function dlSample(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['﻿'+genSample()],{type:'text/csv'}));a.download=`サンプル_${$('cProv').value}_${CK_SMO}.csv`;a.click()}
 
 /* ===== 仕入 ===== */
 function renderBuy(){
@@ -463,7 +566,7 @@ function downloadMF(){
 /* ===== 画面切替 ===== */
 function showTab(t){document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));document.querySelectorAll('section').forEach(s=>s.classList.toggle('on',s.id===t));window.scrollTo(0,0)}
 $('nav').addEventListener('click',e=>{if(e.target.dataset.t)showTab(e.target.dataset.t)});
-function renderAll(){renderDash();renderStock();renderPOS();renderBuy();renderDaily();renderMF()}
+function renderAll(){renderDash();renderStock();renderPOS();renderBuy();renderDaily();renderCheck();renderMF()}
 load();
 $('sp').innerHTML+=Object.keys(SPECIES).map(s=>`<option>${s}</option>`).join('');
 renderAll();
