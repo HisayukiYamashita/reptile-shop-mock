@@ -77,6 +77,8 @@ pre{background:#1f2a24;color:#dfe9e2;padding:12px;border-radius:8px;overflow:aut
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--brand);color:#111316;font-weight:700;padding:10px 18px;border-radius:8px;font-size:13px;opacity:0;transition:.3s;pointer-events:none}
 .toast.on{opacity:1}
 .cart td{white-space:normal}
+.lgd{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--ink);margin-bottom:4px}.lgd i,.tip i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.tip{position:absolute;top:8px;background:#0e1012;border:1px solid var(--line);border-radius:4px;padding:8px 10px;font-size:12px;pointer-events:none;white-space:nowrap;z-index:2}.tip b{color:var(--brand)}
 .testbar{display:flex;gap:10px;align-items:flex-start;background:var(--brand-soft);border-bottom:1px solid var(--line);padding:8px 20px;font-size:12px;color:var(--ink)}
 .testbar span{flex:1} .testbar b{color:var(--brand);margin-right:4px}
 .testbar button,.fbh button{background:none;border:0;color:var(--muted);font-size:18px;line-height:1;cursor:pointer}
@@ -112,6 +114,12 @@ pre{background:#1f2a24;color:#dfe9e2;padding:12px;border-radius:8px;overflow:aut
 <section id="dash" class="on">
   <h2><span class="en">DASHBOARD</span>ダッシュボード</h2>
   <p class="lead">今月の数字と、在庫・未入金の状態をひと目で。Excelの「金額集計行」「利益」「在庫」列を自動で集計した画面です。</p>
+  <div class="card" style="margin-bottom:14px;border-color:var(--brand)">
+    <div class="toolbar" style="margin-bottom:12px"><h3 style="margin:0">会計の数字（マネーフォワード）</h3><span id="mfMeta" style="font-size:12px;color:var(--muted)"></span><span style="flex:1"></span>
+      <label class="btn sm" style="display:inline-block">CSVを読み込む<input type="file" accept=".csv" multiple onchange="onMFFiles(this)" style="display:none"></label><button class="btn ghost sm" onclick="clearMF()">消去</button></div>
+    <div id="mfDash"></div>
+  </div>
+  <h3 style="margin:0 0 10px;font-size:14px;color:var(--brand)">お店の数字（販売管理）</h3>
   <div class="grid kpis" id="kpis"></div>
   <div class="grid two" style="margin-top:12px">
     <div class="card"><h3>月別 売上と粗利（直近8か月）</h3><div class="bars" id="bars"></div>
@@ -402,6 +410,100 @@ function arBalances(){
   return bal;
 }
 
+/* ===== 会計（マネーフォワード）CSV ===== */
+const MFKEY='reptile-mf';let MF={};
+try{MF=JSON.parse(localStorage.getItem(MFKEY))||{}}catch(e){}
+function parseMFcsv(text){
+  const rows=parseCSV(text),h=rows[0].map(x=>x.trim());
+  const isTB=/^開始/.test(h[3]||''),out={acct:{},sub:{},tot:{},sec:{},order:[]};let sec='',cur='';
+  if(isTB){out.kind='tb';out.start=(h[3].split(':')[1]||'').trim();out.end=(h[6].split(':')[1]||'').trim()}
+  else{out.kind='tr';out.months=h.slice(3)}
+  const val=r=>isTB?+r[6]||0:r.slice(3).map(x=>+x||0);
+  rows.slice(1).forEach(r=>{
+    if(r[0]&&r.length<=2){sec=r[0];return}
+    if(r[0]){out.tot[r[0]]=val(r);return}
+    if(r[1]){cur=r[1];out.acct[cur]=val(r);out.sec[cur]=sec;out.order.push(cur);return}
+    if(r[2]&&cur){(out.sub[cur]=out.sub[cur]||{})[r[2]]=val(r)}});
+  out.isPL=('売上高合計' in out.tot)||('売上高' in out.acct);
+  return out}
+function onMFFiles(inp){const fs=[...inp.files];inp.value='';if(!fs.length)return;
+  Promise.all(fs.map(f=>f.arrayBuffer().then(b=>({name:f.name,d:parseMFcsv(decodeBuf(b))})))).then(list=>{
+    const got=[];list.forEach(({name,d})=>{const k=(d.kind==='tb'?'tb':'tr')+(d.isPL?'PL':'BS');MF[k]=d;got.push(({tbPL:'損益（試算表）',tbBS:'貸借（試算表）',trPL:'損益（月次推移）',trBS:'貸借（月次推移）'})[k])});
+    MF.loadedAt=new Date().toLocaleString('ja-JP');delete MF._line;delete MF._bar;try{localStorage.setItem(MFKEY,JSON.stringify(MF))}catch(e){}
+    renderMFDash();toast('読み込みました：'+[...new Set(got)].join('、'))}).catch(()=>toast('CSVを読み込めませんでした'))}
+function clearMF(){if(!confirm('読み込んだ会計データをこの端末から消します。よろしいですか？'))return;MF={};try{localStorage.removeItem(MFKEY)}catch(e){};renderMFDash()}
+const man=v=>{const a=Math.abs(v);return(v<0?'−':'')+(a>=1e8?(a/1e8).toFixed(2)+'億':a>=1e4?Math.round(a/1e4).toLocaleString('ja-JP')+'万':Math.round(a).toLocaleString('ja-JP'))};
+function mfEnd(){return(MF.tbPL||MF.tbBS)?.end||''}
+function trIdx(tr){const e=mfEnd(),lab=e?(+e.slice(5,7))+'月':null;let n=tr.months.findIndex(m=>m===lab);if(n<0)n=tr.months.findIndex(m=>/決算/.test(m))-1;if(n<0)n=tr.months.length-1;return n+1}
+/* 折れ線（共通の1軸・凡例＋末尾ラベル・ホバー） */
+function lineChart(el,labels,series){
+  const W=640,H=230,L=56,R=86,T=14,B=26,all=series.flatMap(s=>s.v),mx=Math.max(...all,0),mn=Math.min(...all,0);
+  const step=Math.pow(10,Math.floor(Math.log10((mx-mn)||1)));const top=Math.ceil(mx/step)*step,bot=Math.floor(mn/step)*step;
+  const x=i=>L+(labels.length<2?0:i*(W-L-R)/(labels.length-1)),y=v=>T+(top-v)/(top-bot||1)*(H-T-B);
+  const ticks=[];for(let v=bot;v<=top+1;v+=step*(((top-bot)/step)>6?2:1))ticks.push(v);
+  let s=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">`;
+  ticks.forEach(v=>s+=`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${L-6}" y="${y(v)+4}" text-anchor="end" font-size="10" fill="var(--muted)">${man(v)}</text>`);
+  labels.forEach((m,i)=>s+=`<text x="${x(i)}" y="${H-8}" text-anchor="middle" font-size="10" fill="var(--muted)">${m}</text>`);
+  series.forEach(se=>{s+=`<polyline fill="none" stroke="${se.c}" stroke-width="2" stroke-linejoin="round" points="${se.v.map((v,i)=>x(i)+','+y(v)).join(' ')}"/>`;
+    se.v.forEach((v,i)=>s+=`<circle cx="${x(i)}" cy="${y(v)}" r="3.5" fill="${se.c}" stroke="var(--surface)" stroke-width="2"/>`);
+  });
+  const lbl=series.map(se=>({t:`${se.n} ${man(se.v[se.v.length-1])}`,y:y(se.v[se.v.length-1])+4})).sort((a,b)=>a.y-b.y);
+  for(let i=1;i<lbl.length;i++)if(lbl[i].y-lbl[i-1].y<14)lbl[i].y=lbl[i-1].y+14;
+  lbl.forEach(l=>s+=`<text x="${x(labels.length-1)+8}" y="${l.y}" font-size="11" fill="var(--ink)">${l.t}</text>`);
+  labels.forEach((m,i)=>s+=`<rect x="${x(i)-(W-L-R)/labels.length/2}" y="${T}" width="${(W-L-R)/labels.length}" height="${H-T-B}" fill="transparent" data-i="${i}"/>`);
+  s+=`<line class="xh" x1="0" x2="0" y1="${T}" y2="${H-B}" stroke="var(--muted)" stroke-dasharray="3 3" style="display:none"/></svg>`;
+  el.innerHTML=`<div class="lgd">${series.map(se=>`<span><i style="background:${se.c}"></i>${se.n}</span>`).join('')}</div><div style="position:relative">${s}<div class="tip" style="display:none"></div></div>`;
+  const svg=el.querySelector('svg'),tip=el.querySelector('.tip'),xh=el.querySelector('.xh');
+  svg.querySelectorAll('rect[data-i]').forEach(r=>{r.addEventListener('mousemove',()=>{const i=+r.dataset.i;xh.setAttribute('x1',x(i));xh.setAttribute('x2',x(i));xh.style.display='';
+    tip.innerHTML=`<b>${labels[i]}末</b>`+series.map(se=>`<div><i style="background:${se.c}"></i>${se.n}　${yen(se.v[i])}</div>`).join('');tip.style.display='block';tip.style.left=Math.min(x(i)/W*100,62)+'%'});
+    r.addEventListener('mouseleave',()=>{tip.style.display='none';xh.style.display='none'})})}
+function barChart(el,labels,vals,fmt){
+  const W=640,H=200,L=56,R=12,T=14,B=26,mx=Math.max(...vals,0),mn=Math.min(...vals,0),rg=(mx-mn)||1,y=v=>T+(mx-v)/rg*(H-T-B),bw=(W-L-R)/labels.length;
+  let s=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block"><line x1="${L}" x2="${W-R}" y1="${y(0)}" y2="${y(0)}" stroke="var(--muted)" stroke-width="1"/>`;
+  vals.forEach((v,i)=>{const x0=L+i*bw+bw*.22,w=bw*.56,y0=Math.min(y(v),y(0)),h=Math.max(Math.abs(y(v)-y(0)),1);
+    s+=`<rect x="${x0}" y="${y0}" width="${w}" height="${h}" rx="3" fill="${v<0?'var(--danger)':'var(--brand)'}"><title>${labels[i]}　${fmt(v)}</title></rect>`;
+    s+=`<text x="${x0+w/2}" y="${v<0?y0+h+12:y0-4}" text-anchor="middle" font-size="10" fill="var(--ink)">${man(v)}</text><text x="${x0+w/2}" y="${H-8}" text-anchor="middle" font-size="10" fill="var(--muted)">${labels[i]}</text>`});
+  el.innerHTML=s+'</svg>'}
+function renderMFDash(){
+  const box=$('mfDash');if(!box)return;
+  if(!MF.tbPL&&!MF.tbBS&&!MF.trBS){box.innerHTML=`<p class="lead" style="margin:0">マネーフォワードの「試算表（損益計算書・貸借対照表）」と「月次推移（貸借対照表）」のCSVを読み込むと、ここに業績が出ます。データはこの端末のブラウザにだけ保存され、どこにも送信されません。</p>`;$('mfMeta').textContent='';return}
+  const P=MF.tbPL,B=MF.tbBS,T=MF.trBS,end=mfEnd();
+  $('mfMeta').textContent=`${P?`期間 ${P.start}〜${P.end}`:''}　読込 ${MF.loadedAt||''}`;
+  let h='';
+  if(P||B){const t=P?.tot||{},sales=t['売上高合計']||0,gp=t['売上総利益']||0,op=t['営業利益']||0,ord=t['経常利益']||0;
+    const cash=B?.tot['現金及び預金合計'],loan=B?(B.acct['長期借入金']||0)+(B.acct['短期借入金']||0):null,inv=B?.acct['商品'];
+    const k=[];if(P)k.push(['売上高（累計）',yen(sales),`${P.start.slice(0,7)}〜${P.end.slice(0,7)}`],['売上総利益',yen(gp),`粗利率 ${(gp/sales*100).toFixed(1)}%`],['営業利益',yen(op),`営業利益率 ${(op/sales*100).toFixed(1)}%`],['経常利益',yen(ord),`経常利益率 ${(ord/sales*100).toFixed(1)}%`]);
+    if(B)k.push(['現預金',yen(cash),`${end}時点`],['借入金',yen(loan),cash!=null?`現預金との差 ${yen(cash-loan)}`:''],['商品（在庫）',yen(inv),`${end}時点・税抜`]);
+    h+=`<div class="grid kpis">${k.map(x=>`<div class="card kpi"><div class="l">${x[0]}</div><div class="v">${x[1]}</div><div class="s">${x[2]}</div></div>`).join('')}</div>`}
+  if(T){const n=trIdx(T),lab=T.months.slice(0,n),g=(o,k)=>(o[k]||[]).slice(0,n);
+    const loanS=lab.map((_,i)=>(T.acct['長期借入金']?.[i]||0)+(T.acct['短期借入金']?.[i]||0));
+    h+=`<div class="grid two" style="margin-top:12px"><div class="card"><h3>現預金・借入金・在庫の推移（月末残高）</h3><div id="mfLine"></div></div><div class="card"><h3>月ごとの利益（当期純利益）</h3><div id="mfBar"></div><div style="font-size:11px;color:var(--muted);margin-top:4px">貸借対照表の「うち当期純利益」（累計）の前月差。月末棚卸を入れた月だけ正しい利益になります。</div></div></div>`;
+    MF._line=[lab,[{n:'現預金',c:'#3987e5',v:g(T.tot,'現金及び預金合計')},{n:'借入金',c:'#d95926',v:loanS},{n:'在庫',c:'#199e70',v:g(T.acct,'商品')}]];
+    const cum=g(T.tot,'（うち当期純利益）');MF._bar=[lab,cum.map((v,i)=>i?v-cum[i-1]:v)]}
+  if(P){const sga=P.order.filter(a=>/販売費/.test(P.sec[a])).map(a=>[a,P.acct[a]]).sort((a,b)=>b[1]-a[1]),top=sga.slice(0,8),rest=sga.slice(8).reduce((t,x)=>t+x[1],0),mx=Math.max(...sga.map(x=>x[1]),1);
+    const sub=Object.entries(P.sub['売上高']||{}).filter(x=>x[1]),stot=sub.reduce((t,x)=>t+x[1],0);
+    h+=`<div class="grid two" style="margin-top:12px"><div class="card"><h3>販管費の内訳（累計・上位8）</h3>${top.concat(rest?[['その他',rest]]:[]).map(([a,v])=>`<div class="hb"><span style="width:110px">${esc(a)}</span><span class="t"><i style="width:${v/mx*100}%"></i></span><b>${yen(v)}</b></div>`).join('')}</div>
+      <div class="card"><h3>売上の内訳（補助科目）</h3>${sub.map(([a,v])=>`<div class="hb"><span style="width:110px">${esc(a)}</span><span class="t"><i style="width:${v/stot*100}%"></i></span><b>${(v/stot*100).toFixed(1)}%</b></div>`).join('')}<div class="note" style="margin-top:8px">売上原価：期首棚卸 ${yen(P.acct['期首商品棚卸高']||0)}＋仕入 ${yen(P.acct['仕入高']||0)}−期末棚卸 ${yen(P.acct['期末商品棚卸高']||0)}＝${yen(P.tot['売上原価合計']||0)}（毎月洗替えのため、期首・期末は8か月分の合計）</div></div></div>`}
+  if(P||B){const mo=end.slice(0,7),demo=!(DB.imports||[]).some(x=>!x.undone);
+    const L=invAt(mo),invEx=L.reduce((t,a)=>t+exOf(a),0),mfInv=B?.acct['商品'];
+    const s0=P?.start||'',sold=DB.animals.filter(a=>a.sold&&a.sold.date>=s0&&a.sold.date<=end),siteSales=Math.round(sold.reduce((t,a)=>t+a.sold.price,0)/1.1),mfSales=P?.sub['売上高']?.['生体'];
+    const row=(n,a,b,note)=>{const d=a!=null&&b!=null?a-b:null,ok=d!=null&&Math.abs(d)<=Math.max(10000,Math.abs(a)*0.01);return`<tr><td>${n}</td><td class="n">${a!=null?yen(a):'—'}</td><td class="n">${b!=null?yen(b):'—'}</td><td class="n">${d!=null?yen(d):'—'}</td><td>${d==null?'':ok?'<span class="pill">ほぼ一致</span>':'<span class="pill old">差あり</span>'}</td><td style="white-space:normal;font-size:12px;color:var(--muted)">${note}</td></tr>`};
+    const ar=B?.sub['売掛金']||{};
+    h+=`<div class="card" style="margin-top:12px"><h3>販売管理との突き合わせ（${mo.replace('-','年')}月）</h3>
+      ${demo?'<p class="diff-ng" style="font-size:12px;margin:0 0 8px">販売管理側はまだダミーデータです。仕入登録で台帳Excelを取り込むと、実際の数字で突き合わせできます。</p>':''}
+      <div class="tbl" style="max-height:none"><table><thead><tr><th>項目</th><th class="n">マネーフォワード</th><th class="n">販売管理</th><th class="n">差額</th><th>判定</th><th>見方</th></tr></thead><tbody>
+      ${B?row('月末在庫（税抜）',mfInv,invEx,'MFの「商品」と、在庫タブの月末在庫（税抜）。差が大きければ棚卸の計上漏れ・死亡処理を確認'):''}
+      ${P?row('生体売上（期間累計・税抜）',mfSales??null,siteSales,'MFの売上高（補助：生体）と、販売管理の販売済み個体の売価÷1.1'):''}
+      </tbody></table></div>
+      ${T?(()=>{const n=trIdx(T),y0=+((P||B).start||end).slice(0,4),m0=+((P||B).start||end).slice(5,7);const ms=T.months.slice(0,n).map((_,i)=>{const d=new Date(y0,m0-1+i,1);return iso(d).slice(0,7)});
+        return`<h3 style="margin-top:14px">月末在庫の突き合わせ（月別・税抜）</h3><div class="tbl" style="max-height:none"><table><thead><tr><th>月末</th><th class="n">MF「商品」</th><th class="n">販売管理</th><th class="n">差額</th><th class="n">販売管理の頭数</th></tr></thead><tbody>${ms.map((m,i)=>{const L=invAt(m),v=L.reduce((t,a)=>t+exOf(a),0),mv=T.acct['商品']?.[i]||0,d=mv-v;return`<tr><td>${m.replace('-','年')}月</td><td class="n">${num(mv)}</td><td class="n">${num(v)}</td><td class="n"${Math.abs(d)>Math.max(10000,mv*0.01)?' style="color:var(--accent)"':''}>${num(d)}</td><td class="n">${L.length}</td></tr>`}).join('')}</tbody></table></div>`})():''}
+      ${B?`<h3 style="margin-top:14px">売掛金の内訳（${end}時点）</h3><table><tbody>${Object.entries(ar).filter(x=>x[1]).map(([k,v])=>`<tr><td>${esc(k)}</td><td class="n">${yen(v)}</td><td style="font-size:12px;color:var(--muted)">${/不明/.test(k)?'内容の確認が必要':['STORES','USEN','ペイペイ','ヤマトクレジット'].includes(k)?'翌月の入金で消える想定':''}</td></tr>`).join('')}</tbody></table>`:''}
+    </div>`}
+  box.innerHTML=h;
+  if(MF._line&&$('mfLine'))lineChart($('mfLine'),...MF._line);
+  if(MF._bar&&$('mfBar'))barChart($('mfBar'),MF._bar[0],MF._bar[1],yen);
+}
+
 /* ===== 在庫 ===== */
 function renderStock(){
   const q=$('q').value.trim().toLowerCase(),st=$('st').value,sp=$('sp').value;
@@ -685,9 +787,9 @@ function buildJournals(){
     });
   }
   if($('mI').checked){
-    const inv=DB.animals.filter(a=>!a.sold&&!a.dead&&ym(a.bDate)<=mo).reduce((t,a)=>t+a.cost,0);
+    const inv=invAt(mo).reduce((t,a)=>t+exOf(a),0);
     const last=new Date(mo+'-01');last.setMonth(last.getMonth()+1);last.setDate(0);
-    J.push({d:iso(last),dr:'商品',ds:'',dt:'対象外',amt:inv,cr:'期末商品棚卸高',cs:'',ct:'対象外',memo:'期末棚卸（生体・個体台帳の在庫原価合計）',closing:true});
+    J.push({d:iso(last),dr:'商品',ds:'',dt:'対象外',amt:inv,cr:'期末商品棚卸高',cs:'',ct:'対象外',memo:'月末棚卸（生体・個体台帳の月末在庫・税抜）',closing:true});
   }
   return J.sort((a,b)=>a.d.localeCompare(b.d));
 }
@@ -724,7 +826,7 @@ function copyFb(){const b=fbText();if(!b){toast('まだ何も書かれていま�
 function hideBar(){$('testbar').style.display='none';try{sessionStorage.setItem('reptile-bar','0')}catch(e){}}
 try{if(sessionStorage.getItem('reptile-bar')==='0')$('testbar').style.display='none'}catch(e){}
 
-function renderAll(){renderDash();renderStock();renderPOS();renderBuy();renderDaily();renderCheck();renderMF()}
+function renderAll(){renderDash();renderMFDash();renderStock();renderPOS();renderBuy();renderDaily();renderCheck();renderMF()}
 load();
 $('sp').innerHTML+=Object.keys(SPECIES).map(s=>`<option>${s}</option>`).join('');
 renderAll();
