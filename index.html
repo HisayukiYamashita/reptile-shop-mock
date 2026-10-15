@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>爬虫類ショップ 在庫・販売管理（イメージ）</title>
+<title>爬虫類ショップ 在庫・販売管理（テスト版）</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cantarell:wght@400;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -77,13 +77,22 @@ pre{background:#1f2a24;color:#dfe9e2;padding:12px;border-radius:8px;overflow:aut
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--brand);color:#111316;font-weight:700;padding:10px 18px;border-radius:8px;font-size:13px;opacity:0;transition:.3s;pointer-events:none}
 .toast.on{opacity:1}
 .cart td{white-space:normal}
+.testbar{display:flex;gap:10px;align-items:flex-start;background:var(--brand-soft);border-bottom:1px solid var(--line);padding:8px 20px;font-size:12px;color:var(--ink)}
+.testbar span{flex:1} .testbar b{color:var(--brand);margin-right:4px}
+.testbar button,.fbh button{background:none;border:0;color:var(--muted);font-size:18px;line-height:1;cursor:pointer}
+.fbbtn{position:fixed;right:16px;bottom:16px;z-index:20;background:var(--brand);color:#111316;border:0;border-radius:99px;padding:10px 16px;font:inherit;font-weight:700;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.4)}
+.fb{position:fixed;right:16px;bottom:68px;z-index:20;width:min(360px,calc(100vw - 32px));background:var(--surface);border:1px solid var(--brand);border-radius:4px;padding:14px;display:none;box-shadow:0 8px 30px rgba(0,0,0,.5)}
+.fb.on{display:block} .fb p{font-size:12px;color:var(--muted);margin:6px 0 8px}
+.fbh{display:flex;align-items:center;gap:8px} .fbh b{color:var(--brand)} .fbh span{flex:1;font-size:12px;color:var(--muted)}
+.fb textarea{width:100%;font:inherit;font-size:13px;padding:8px;border:1px solid var(--line);border-radius:2px;background:var(--surface2);color:var(--ink);resize:vertical}
+.fbl{font-size:11px;color:var(--muted);margin-top:6px}
 </style>
 </head>
 <body>
 <header>
   <img class="logo" src="https://www.swag-baller.com/assets/img/common/logo_wh@2x.png" alt="SWAG BALLER" onerror="this.style.display='none'">
   <div class="ttl"><h1>STOCK &amp; SALES</h1><span class="sub">在庫・販売管理</span></div>
-  <span class="tag">DEMO・ダミーデータ</span>
+  <span class="tag">TEST・ダミーデータ</span>
   <span class="sp"></span><button onclick="resetDemo()">RESET DEMO</button>
 </header>
 <nav id="nav">
@@ -95,6 +104,7 @@ pre{background:#1f2a24;color:#dfe9e2;padding:12px;border-radius:8px;overflow:aut
   <button data-t="check"><b>CHECK</b><small>売上チェック</small></button>
   <button data-t="mf"><b>EXPORT</b><small>MF取込</small></button>
 </nav>
+<div class="testbar" id="testbar"><span><b>テスト版</b>　入力したデータは、この端末のブラウザにだけ保存されます（他の端末とは共有されません）。気づいた点は右下の「ご意見メモ」に書いてください。</span><button onclick="hideBar()" aria-label="閉じる">×</button></div>
 <main>
 
 <!-- ダッシュボード -->
@@ -252,6 +262,14 @@ pre{background:#1f2a24;color:#dfe9e2;padding:12px;border-radius:8px;overflow:aut
 </section>
 </main>
 <div class="toast" id="toast"></div>
+<button class="fbbtn" onclick="toggleFb()">✎ ご意見メモ</button>
+<div class="fb" id="fb">
+  <div class="fbh"><b>ご意見メモ</b><span id="fbTab"></span><button onclick="toggleFb()" aria-label="閉じる">×</button></div>
+  <p>この画面で「足りない項目」「要らない項目」「使いにくいところ」を書いてください。画面ごとに分けて保存されます。</p>
+  <textarea id="fbText" rows="6" placeholder="例）在庫一覧に写真を出したい／仕入先に電話番号がほしい" oninput="saveFb()"></textarea>
+  <div class="fbl" id="fbList"></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn sm" onclick="mailFb()">まとめてメールで送る</button><button class="btn ghost sm" onclick="copyFb()">まとめてコピー</button></div>
+</div>
 
 <script>
 /* ===== マスタ ===== */
@@ -275,15 +293,15 @@ const SPECIES={
 const GOODS=[{n:'冷凍マウス（S）',p:150,c:70},{n:'冷凍ラット（M）',p:450,c:220},{n:'床材',p:1650,c:900},{n:'パネルヒーター',p:4400,c:2600},{n:'シェルター',p:2200,c:1200}];
 
 /* ===== データ ===== */
-const KEY='reptile-mock-v1';
+const KEY='reptile-mock-v2';
 let DB;
 function rng(seed){return()=>{seed=(seed*16807)%2147483647;return(seed-1)/2147483646}}
 function genDemo(){
   const r=rng(20260929),pick=a=>a[Math.floor(r()*a.length)];
   const animals=[],sales=[],goodsSales=[],purchases=[];
-  const today=new Date('2026-09-29');
+  const today=new Date(TODAY);
   let no=1001;
-  for(let d=new Date('2026-01-10');d<=today;d.setDate(d.getDate()+Math.floor(3+r()*6))){
+  for(let d=new Date(monthStart(9)+'-10');d<=today;d.setDate(d.getDate()+Math.floor(3+r()*6))){
     const sup=pick(SUPS),sp=pick(Object.keys(SPECIES)),S=SPECIES[sp],n=1+Math.floor(r()*4);
     for(let i=0;i<n;i++){
       const cost=Math.round((S.c[0]+r()*r()*(S.c[1]-S.c[0]))/100)*100;
@@ -297,7 +315,7 @@ function genDemo(){
       animals.push(a);
     }
   }
-  for(let d=new Date('2026-01-05');d<=today;d.setDate(d.getDate()+1)){
+  for(let d=new Date(monthStart(9)+'-05');d<=today;d.setDate(d.getDate()+1)){
     if(r()<0.55){const g=pick(GOODS),q=1+Math.floor(r()*6);goodsSales.push({date:iso(d),n:g.n,q,price:g.p*q,cost:g.c*q,pay:pick(['cash','cash','cash','paypay','stores'])});}
     if(d.getDate()===5){purchases.push({date:iso(d),sup:'A爬虫類卸',n:'餌・用品 仕入',amt:Math.round((80000+r()*60000)/10)*10,pay:'振込'});}
   }
@@ -314,7 +332,9 @@ const num=v=>Math.round(v).toLocaleString('ja-JP');
 function iso(d){const z=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate())}
 const ym=s=>s.slice(0,7);
 const payName=k=>PAYS.find(p=>p.k===k)?.n||k;
-const TODAY='2026-09-29';
+const TODAY=iso(new Date());
+/* n か月前の 'YYYY-MM' */
+function monthStart(n){const d=new Date(TODAY.slice(0,7)+'-01');d.setMonth(d.getMonth()-n);return iso(d).slice(0,7)}
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('on');setTimeout(()=>t.classList.remove('on'),1800)}
 function daysBetween(a,b){return Math.round((new Date(b)-new Date(a))/864e5)}
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
@@ -330,7 +350,7 @@ function months(){const s=new Set(allSales().map(x=>ym(x.date)));return[...s].so
 
 /* ===== ダッシュボード ===== */
 function renderDash(){
-  const S=allSales(),cur=ym(TODAY),prev='2026-08';
+  const S=allSales(),cur=ym(TODAY),prev=monthStart(1);
   const m=S.filter(x=>ym(x.date)===cur),pm=S.filter(x=>ym(x.date)===prev);
   const sum=(a,f)=>a.reduce((t,x)=>t+f(x),0);
   const sales=sum(m,x=>x.price),gp=sum(m,x=>x.price-x.cost),psales=sum(pm,x=>x.price);
@@ -344,7 +364,7 @@ function renderDash(){
     ['在庫金額（原価）',yen(sum(inv,a=>a.cost)),'＝期末棚卸の元データ'],
     ['未入金（決済会社）',yen(sum(Object.values(ar),v=>v)),'カード・PayPay等の入金待ち'],
   ].map(k=>`<div class="card kpi"><div class="l">${k[0]}</div><div class="v">${k[1]}</div><div class="s">${k[2]}</div></div>`).join('');
-  const ms=[];for(let i=7;i>=0;i--){const d=new Date('2026-09-01');d.setMonth(d.getMonth()-i);ms.push(iso(d).slice(0,7))}
+  const ms=[];for(let i=7;i>=0;i--)ms.push(monthStart(i));
   const vals=ms.map(k=>{const a=S.filter(x=>ym(x.date)===k);return{k,s:sum(a,x=>x.price),g:sum(a,x=>x.price-x.cost)}});
   const mx=Math.max(...vals.map(v=>v.s))||1;
   $('bars').innerHTML=vals.map(v=>`<div class="bar" title="${v.k} 売上${yen(v.s)} 粗利${yen(v.g)}"><div style="display:flex;gap:2px;align-items:flex-end;width:100%;height:130px"><i style="height:${v.s/mx*100}%"></i><i class="gp" style="height:${v.g/mx*100}%"></i></div>${+v.k.slice(5)}月</div>`).join('');
@@ -460,7 +480,7 @@ function ckFix(i){const r=CK.last.R[i],P=CK.last.P;
   save();renderAll();toast('台帳を修正しました')}
 function genSample(){
   const P=$('cProv').value,r=rng(808),pick=a=>a[Math.floor(r()*a.length)];
-  const mo=['2026-08','2026-07','2026-06'].map(m=>[m,ledgerGroups(m).filter(g=>g.pay===P).length]).sort((a,b)=>b[1]-a[1])[0][0],L=ledgerGroups(mo);CK_SMO=mo;
+  const mo=[monthStart(1),monthStart(2),monthStart(3)].map(m=>[m,ledgerGroups(m).filter(g=>g.pay===P).length]).sort((a,b)=>b[1]-a[1])[0][0],L=ledgerGroups(mo);CK_SMO=mo;
   let rows=L.filter(g=>g.pay===P).map(g=>({date:g.date,amt:g.amt}));
   const twin={usen:'stores',stores:'usen',paypay:'cash'}[P],other=L.filter(g=>g.pay===twin).slice(0,2);
   other.forEach(g=>rows.push({date:g.date,amt:g.amt}));
@@ -501,13 +521,13 @@ function recon(mo){
   return PAYS.filter(p=>p.ar&&p.k!=='bank').map((p,i)=>{
     const sales=S.filter(x=>x.pay===p.k).reduce((t,x)=>t+x.price,0);
     let dep=DB.deposits[mo+p.k];
-    if(dep==null){dep=Math.round(sales*(1-p.fee/100));if(mo==='2026-08'&&p.k==='usen')dep-=3300}
+    if(dep==null){dep=Math.round(sales*(1-p.fee/100));if(mo===monthStart(1)&&p.k==='usen')dep-=3300}
     const fee=sales-dep,rate=sales?fee/sales*100:0,diff=+(rate-p.fee).toFixed(2);
     return{p,ar:p.ar,sales,dep,fee,rate,diff};
   }).concat([(()=>{const p=PAYS[1],sales=S.filter(x=>x.pay==='bank').reduce((t,x)=>t+x.price,0);return{p,ar:p.ar,sales,dep:sales,fee:0,rate:0,diff:0}})()]);
 }
 function renderDaily(){
-  const ms=months();if(!$('dMonth').options.length){$('dMonth').innerHTML=ms.map(m=>`<option>${m}</option>`).join('');$('dMonth').value='2026-08'}
+  const ms=months();if(!$('dMonth').options.length){$('dMonth').innerHTML=ms.map(m=>`<option>${m}</option>`).join('');$('dMonth').value=monthStart(1)}
   const mo=$('dMonth').value||ms[0];
   const S=allSales().filter(x=>ym(x.date)===mo);
   const days=[...new Set(S.map(x=>x.date))].sort();
@@ -550,7 +570,7 @@ function buildJournals(){
   return J.sort((a,b)=>a.d.localeCompare(b.d));
 }
 function renderMF(){
-  const ms=months();if(!$('mMonth').options.length){$('mMonth').innerHTML=ms.map(m=>`<option>${m}</option>`).join('');$('mMonth').value='2026-08'}
+  const ms=months();if(!$('mMonth').options.length){$('mMonth').innerHTML=ms.map(m=>`<option>${m}</option>`).join('');$('mMonth').value=monthStart(1)}
   const J=buildJournals();$('mCount').textContent=`${J.length}行`;
   $('mRows').innerHTML=J.map(j=>`<tr><td>${j.d}</td><td>${j.dr}</td><td>${esc(j.ds)}</td><td>${j.dt}</td><td class="n">${num(j.amt)}</td><td>${j.cr}</td><td>${esc(j.cs)}</td><td>${j.ct}</td><td class="n">${num(j.amt)}</td><td style="white-space:normal;min-width:220px">${esc(j.memo)}</td></tr>`).join('');
 }
@@ -564,8 +584,24 @@ function downloadMF(){
 }
 
 /* ===== 画面切替 ===== */
-function showTab(t){document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));document.querySelectorAll('section').forEach(s=>s.classList.toggle('on',s.id===t));window.scrollTo(0,0)}
+function showTab(t){document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));document.querySelectorAll('section').forEach(s=>s.classList.toggle('on',s.id===t));window.scrollTo(0,0);if($('fb').classList.contains('on'))renderFb()}
 $('nav').addEventListener('click',e=>{if(e.target.dataset.t)showTab(e.target.dataset.t)});
+/* ===== ご意見メモ ===== */
+const FBKEY='reptile-mock-feedback';let FB={};
+try{FB=JSON.parse(localStorage.getItem(FBKEY))||{}}catch(e){}
+const curTab=()=>document.querySelector('nav button.on')?.dataset.t||'dash';
+const tabName=t=>document.querySelector(`nav button[data-t="${t}"] small`)?.textContent||t;
+function toggleFb(){$('fb').classList.toggle('on');renderFb()}
+function renderFb(){const t=curTab();$('fbTab').textContent='画面：'+tabName(t);$('fbText').value=FB[t]||'';
+  const done=Object.keys(FB).filter(k=>FB[k]&&FB[k].trim());$('fbList').textContent=done.length?'記入済み：'+done.map(tabName).join('、'):''}
+function saveFb(){FB[curTab()]=$('fbText').value;try{localStorage.setItem(FBKEY,JSON.stringify(FB))}catch(e){}}
+function fbText(){return Object.keys(FB).filter(k=>FB[k]&&FB[k].trim()).map(k=>`【${tabName(k)}】\n${FB[k].trim()}`).join('\n\n')}
+function mailFb(){const b=fbText();if(!b){toast('まだ何も書かれていません');return}
+  location.href='mailto:yamashita@orquestax.com?subject='+encodeURIComponent('在庫・販売管理テスト版　ご意見')+'&body='+encodeURIComponent(b)}
+function copyFb(){const b=fbText();if(!b){toast('まだ何も書かれていません');return}navigator.clipboard.writeText(b).then(()=>toast('コピーしました。LINEなどに貼り付けてください'),()=>toast('コピーできませんでした'))}
+function hideBar(){$('testbar').style.display='none';try{sessionStorage.setItem('reptile-bar','0')}catch(e){}}
+try{if(sessionStorage.getItem('reptile-bar')==='0')$('testbar').style.display='none'}catch(e){}
+
 function renderAll(){renderDash();renderStock();renderPOS();renderBuy();renderDaily();renderCheck();renderMF()}
 load();
 $('sp').innerHTML+=Object.keys(SPECIES).map(s=>`<option>${s}</option>`).join('');
