@@ -113,7 +113,14 @@ pre{background:#1f2a24;color:#dfe9e2;padding:12px;border-radius:8px;overflow:aut
 <!-- ダッシュボード -->
 <section id="dash" class="on">
   <h2><span class="en">DASHBOARD</span>ダッシュボード</h2>
-  <p class="lead">売上・仕入・経費の月ごとの推移です（単位：万円）。</p>
+  <p class="lead">当月の売上と日々の売上、売上・仕入・経費の月ごとの推移です。</p>
+  <div class="toolbar"><h3 style="margin:0;font-size:14px;color:var(--brand)">当月の売上</h3><select id="tMonth" onchange="renderToday()"></select><span style="flex:1"></span></div>
+  <div class="grid kpis" id="tKpis"></div>
+  <div class="grid two" style="margin-top:12px">
+    <div class="card"><h3>日々の売上（税込）</h3><div id="tChart"></div></div>
+    <div class="card"><h3>日別の明細</h3><div class="tbl" style="max-height:300px"><table><thead><tr><th>日付</th><th class="n">件数</th><th class="n">売上（税込）</th><th class="n">粗利</th><th>決済の内訳</th></tr></thead><tbody id="tRows"></tbody></table></div></div>
+  </div>
+  <h3 style="margin:22px 0 10px;font-size:14px;color:var(--brand)">月ごとの推移（単位：万円）</h3>
   <div class="toolbar"><span id="mfMeta" style="font-size:12px;color:var(--muted)"></span><span style="flex:1"></span>
     <label class="btn ghost sm" style="display:inline-block">MFのCSVを読み込む<input type="file" accept=".csv" multiple onchange="onMFFiles(this)" style="display:none"></label><button class="btn ghost sm" onclick="clearMF()">消去</button></div>
   <div id="mfDash"></div>
@@ -457,13 +464,30 @@ function lineChart(el,labels,series){
   svg.querySelectorAll('rect[data-i]').forEach(r=>{r.addEventListener('mousemove',()=>{const i=+r.dataset.i;xh.setAttribute('x1',x(i));xh.setAttribute('x2',x(i));xh.style.display='';
     tip.innerHTML=`<b>${labels[i]}末</b>`+series.map(se=>`<div><i style="background:${se.c}"></i>${se.n}　${yen(se.v[i])}</div>`).join('');tip.style.display='block';tip.style.left=Math.min(x(i)/W*100,62)+'%'});
     r.addEventListener('mouseleave',()=>{tip.style.display='none';xh.style.display='none'})})}
-function barChart(el,labels,vals,fmt){
+function barChart(el,labels,vals,fmt,noVal){
   const W=Math.max(300,Math.round(el.clientWidth||640)),H=210,L=56,R=12,T=14,B=26,mx=Math.max(...vals,0),mn=Math.min(...vals,0),rg=(mx-mn)||1,y=v=>T+(mx-v)/rg*(H-T-B),bw=(W-L-R)/labels.length;
   let s=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block"><line x1="${L}" x2="${W-R}" y1="${y(0)}" y2="${y(0)}" stroke="var(--muted)" stroke-width="1"/>`;
   vals.forEach((v,i)=>{const x0=L+i*bw+bw*.22,w=bw*.56,y0=Math.min(y(v),y(0)),h=Math.max(Math.abs(y(v)-y(0)),1);
     s+=`<rect x="${x0}" y="${y0}" width="${w}" height="${h}" rx="3" fill="${v<0?'var(--danger)':'var(--brand)'}"><title>${labels[i]}　${fmt(v)}</title></rect>`;
-    s+=`<text x="${x0+w/2}" y="${v<0?y0+h+12:y0-4}" text-anchor="middle" font-size="10" fill="var(--ink)">${Math.round(v/1e4).toLocaleString('ja-JP')}</text><text x="${x0+w/2}" y="${H-8}" text-anchor="middle" font-size="10" fill="var(--muted)">${labels[i]}</text>`});
+    if(!noVal)s+=`<text x="${x0+w/2}" y="${v<0?y0+h+12:y0-4}" text-anchor="middle" font-size="10" fill="var(--ink)">${Math.round(v/1e4).toLocaleString('ja-JP')}</text>`;
+    if(!noVal||i%5===0||i===labels.length-1)s+=`<text x="${x0+w/2}" y="${H-8}" text-anchor="middle" font-size="10" fill="var(--muted)">${labels[i]}</text>`});
   el.innerHTML=s+'</svg>'}
+/* 当月の売上と日々の売上（販売管理から） */
+function renderToday(){
+  const sel=$('tMonth');if(!sel)return;const all=allSales(),ms=months();
+  const base=LIVE&&all.length?ym(all[all.length-1].date):ym(TODAY);if(!ms.includes(base))ms.unshift(base);
+  if(!sel.options.length){sel.innerHTML=ms.map(m=>`<option value="${m}">${m.replace('-','年')}月</option>`).join('');sel.value=base}
+  const mo=sel.value,S=all.filter(x=>ym(x.date)===mo),pd=new Date(mo+'-01');pd.setMonth(pd.getMonth()-1);const pm=iso(pd).slice(0,7);
+  const lastDay=mo===ym(TODAY)?+TODAY.slice(8):+monthEnd(mo).slice(8),P=all.filter(x=>ym(x.date)===pm&&+x.date.slice(8)<=lastDay);
+  const sum=(a,f)=>a.reduce((t,x)=>t+f(x),0),sales=sum(S,x=>x.price),gp=sum(S,x=>x.price-x.cost),ps=sum(P,x=>x.price),heads=S.filter(x=>x.kind==='生体').length,days=new Set(S.map(x=>x.date)).size;
+  $('tKpis').innerHTML=[['売上（税込）',yen(sales),ps?`前月同日まで比 ${((sales/ps-1)*100).toFixed(1)}%`:'前月同日までの売上なし'],['粗利',yen(gp),`粗利率 ${sales?(gp/sales*100).toFixed(1):0}%`],['販売した生体',heads+'匹',`餌・用品 ${S.length-heads}件`],['1日あたり売上',yen(days?sales/days:0),`営業日 ${days}日（売上のあった日）`]]
+    .map(k=>`<div class="card kpi"><div class="l">${k[0]}</div><div class="v">${k[1]}</div><div class="s">${k[2]}</div></div>`).join('');
+  const n=+monthEnd(mo).slice(8),lab=[],vals=[];for(let d=1;d<=n;d++){const k=mo+'-'+String(d).padStart(2,'0');lab.push(d+'日');vals.push(sum(S.filter(x=>x.date===k),x=>x.price))}
+  barChart($('tChart'),lab,vals,yen,true);
+  const byDay={};S.forEach(x=>{(byDay[x.date]=byDay[x.date]||[]).push(x)});
+  $('tRows').innerHTML=Object.keys(byDay).sort().reverse().map(d=>{const a=byDay[d],pp={};a.forEach(x=>pp[x.pay]=(pp[x.pay]||0)+x.price);
+    return`<tr><td>${d.slice(5).replace('-','/')}</td><td class="n">${a.length}</td><td class="n">${num(sum(a,x=>x.price))}</td><td class="n">${num(sum(a,x=>x.price-x.cost))}</td><td style="font-size:12px;color:var(--muted);white-space:normal">${Object.entries(pp).map(([k,v])=>`${payName(k).replace('（カード）','')} ${num(v)}`).join('、')}</td></tr>`}).join('')||'<tr><td colspan="5" style="color:var(--muted)">この月の売上はまだありません</td></tr>';
+}
 function renderMFDash(){
   const box=$('mfDash');if(!box)return;
   const P=MF.trPL;let lab,S,B,G,src;
@@ -484,7 +508,7 @@ function renderMFDash(){
   box.innerHTML=`<div class="grid kpis">${kp.map(([l,a])=>`<div class="card kpi"><div class="l">${l}</div><div class="v">${a?manY(sum(a)):'—'}</div><div class="s">${a?'月平均 '+manY(sum(a)/(lab.length||1)):'MFの損益計算書（月次推移）CSVで表示'}</div></div>`).join('')}</div>
     <div class="card" style="margin-top:12px"><h3>売上の推移</h3><div id="mfS"></div></div>
     <div class="grid two" style="margin-top:12px"><div class="card"><h3>仕入の推移</h3><div id="mfB"></div></div><div class="card"><h3>経費（販管費）の推移</h3><div id="mfG"></div></div></div>`;
-  MF._draw=()=>{barChart($('mfS'),lab,S,manY);barChart($('mfB'),lab,B,manY);if(G)barChart($('mfG'),lab,G,manY)};MF._draw();
+  MF._draw=()=>{renderToday();barChart($('mfS'),lab,S,manY);barChart($('mfB'),lab,B,manY);if(G)barChart($('mfG'),lab,G,manY)};MF._draw();
   if(!G)$('mfG').innerHTML='<p class="lead" style="margin:20px 0">マネーフォワードの「推移表 → 損益計算書」のCSVを読み込むと表示されます。</p>';
 }
 
