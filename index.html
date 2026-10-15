@@ -124,7 +124,7 @@ pre{background:#1f2a24;color:#dfe9e2;padding:12px;border-radius:8px;overflow:aut
   <div class="grid two" style="margin-top:12px">
     <div class="card"><h3>月別 売上と粗利（直近8か月）</h3><div class="bars" id="bars"></div>
       <div style="font-size:11px;color:var(--muted);margin-top:6px">■ 濃い＝売上　■ 薄い＝粗利</div></div>
-    <div class="card"><h3>今月の決済手段別</h3><div id="paymix"></div></div>
+    <div class="card"><h3 id="payTitle">今月の決済手段別</h3><div id="paymix"></div></div>
   </div>
   <div class="grid two" style="margin-top:12px">
     <div class="card"><h3>滞留在庫（仕入から90日超）</h3><div id="stale"></div></div>
@@ -322,7 +322,8 @@ const SPECIES={
 const GOODS=[{n:'冷凍マウス（S）',p:150,c:70},{n:'冷凍ラット（M）',p:450,c:220},{n:'床材',p:1650,c:900},{n:'パネルヒーター',p:4400,c:2600},{n:'シェルター',p:2200,c:1200}];
 
 /* ===== データ ===== */
-const KEY='reptile-mock-v2';
+const LIVE=!!window.SEED;
+const KEY=LIVE?'reptile-lr-'+SEED.ver:'reptile-mock-v2';
 let DB;
 function rng(seed){return()=>{seed=(seed*16807)%2147483647;return(seed-1)/2147483646}}
 function genDemo(){
@@ -350,9 +351,19 @@ function genDemo(){
   }
   return{animals,goodsSales,purchases,deposits:{},seq:no};
 }
-function load(){try{DB=JSON.parse(localStorage.getItem(KEY))}catch(e){} if(!DB)DB=genDemo()}
+function b64buf(b){const s=atob(b),u=new Uint8Array(s.length);for(let i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return u.buffer}
+/* 実データ版：埋め込んだ台帳ExcelとMFのCSVから作る */
+function seedDB(){
+  DB={animals:[],goodsSales:[],purchases:[],deposits:{},seq:1,extraSups:[],imports:[]};
+  const wb=XLSX.read(b64buf(SEED.ledger),{type:'array',cellDates:true});
+  IMP={wb,file:SEED.ledgerName,sheet:wb.SheetNames.find(n=>/購入|仕入/.test(n))||wb.SheetNames[0]};readImpSheet();
+  IMP.rows.forEach(r=>{if(!r.errs.length)r.on=true});importRows('seed');IMP=null;
+  MF={};(SEED.mf||[]).forEach(f=>{const d=parseMFcsv(decodeBuf(b64buf(f.b64)));MF[(d.kind==='tb'?'tb':'tr')+(d.isPL?'PL':'BS')]=d});MF.loadedAt=SEED.ver;
+  try{localStorage.setItem(MFKEY,JSON.stringify(MF))}catch(e){}
+  return DB}
+function load(){try{DB=JSON.parse(localStorage.getItem(KEY))}catch(e){} if(!DB)DB=LIVE?seedDB():genDemo()}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(DB))}catch(e){}}
-function resetDemo(){if(!confirm('デモデータを初期状態に戻します。よろしいですか？'))return;DB=genDemo();save();renderAll();toast('初期化しました')}
+function resetDemo(){if(!confirm(LIVE?'台帳の内容に戻します（この画面で入力した販売・仕入は消えます）。よろしいですか？':'デモデータを初期状態に戻します。よろしいですか？'))return;DB=LIVE?seedDB():genDemo();save();renderAll();toast(LIVE?'台帳の内容に戻しました':'初期化しました')}
 
 /* ===== ユーティリティ ===== */
 const $=id=>document.getElementById(id);
@@ -379,7 +390,7 @@ function months(){const s=new Set(allSales().map(x=>ym(x.date)));return[...s].so
 
 /* ===== ダッシュボード ===== */
 function renderDash(){
-  const S=allSales(),cur=ym(TODAY),prev=monthStart(1);
+  const S=allSales(),lastSale=S.length?S[S.length-1].date:TODAY,cur=LIVE?ym(lastSale):ym(TODAY),back=n=>{const d=new Date(cur+'-01');d.setMonth(d.getMonth()-n);return iso(d).slice(0,7)},prev=back(1),cl=LIVE?`${+cur.slice(5)}月`:'今月';
   const m=S.filter(x=>ym(x.date)===cur),pm=S.filter(x=>ym(x.date)===prev);
   const sum=(a,f)=>a.reduce((t,x)=>t+f(x),0);
   const sales=sum(m,x=>x.price),gp=sum(m,x=>x.price-x.cost),psales=sum(pm,x=>x.price);
@@ -387,23 +398,24 @@ function renderDash(){
   const stale=inv.filter(a=>daysBetween(a.bDate,TODAY)>90);
   const ar=arBalances();
   $('kpis').innerHTML=[
-    ['今月の売上（税込）',yen(sales),`前月比 ${psales?((sales/psales-1)*100).toFixed(1):'-'}%`],
-    ['今月の粗利',yen(gp),`粗利率 ${sales?(gp/sales*100).toFixed(1):0}%`],
+    [`${cl}の売上（税込）`,yen(sales),`前月比 ${psales?((sales/psales-1)*100).toFixed(1):'-'}%`],
+    [`${cl}の粗利`,yen(gp),`粗利率 ${sales?(gp/sales*100).toFixed(1):0}%`],
     ['在庫頭数',inv.length+'匹',`うち90日超 ${stale.length}匹`],
-    ['在庫金額（原価）',yen(sum(inv,a=>a.cost)),'＝期末棚卸の元データ'],
+    ['在庫金額（原価・税抜）',yen(sum(inv,a=>exOf(a))),`税込 ${yen(sum(inv,a=>a.cost))}`],
     ['未入金（決済会社）',yen(sum(Object.values(ar),v=>v)),'カード・PayPay等の入金待ち'],
   ].map(k=>`<div class="card kpi"><div class="l">${k[0]}</div><div class="v">${k[1]}</div><div class="s">${k[2]}</div></div>`).join('');
-  const ms=[];for(let i=7;i>=0;i--)ms.push(monthStart(i));
+  const ms=[];for(let i=7;i>=0;i--)ms.push(back(i));
   const vals=ms.map(k=>{const a=S.filter(x=>ym(x.date)===k);return{k,s:sum(a,x=>x.price),g:sum(a,x=>x.price-x.cost)}});
   const mx=Math.max(...vals.map(v=>v.s))||1;
   $('bars').innerHTML=vals.map(v=>`<div class="bar" title="${v.k} 売上${yen(v.s)} 粗利${yen(v.g)}"><div style="display:flex;gap:2px;align-items:flex-end;width:100%;height:130px"><i style="height:${v.s/mx*100}%"></i><i class="gp" style="height:${v.g/mx*100}%"></i></div>${+v.k.slice(5)}月</div>`).join('');
   const byPay={};m.forEach(x=>byPay[x.pay]=(byPay[x.pay]||0)+x.price);
-  const pmx=Math.max(...Object.values(byPay),1);
+  const pmx=Math.max(...Object.values(byPay),1);$('payTitle').textContent=cl+'の決済手段別';
   $('paymix').innerHTML=PAYS.map(p=>`<div class="hb"><span>${p.n.replace('（カード）','')}</span><span class="t"><i style="width:${(byPay[p.k]||0)/pmx*100}%"></i></span><b>${yen(byPay[p.k]||0)}</b></div>`).join('');
   $('stale').innerHTML=stale.length?`<table><thead><tr><th>No</th><th>品目</th><th class="n">滞留</th><th class="n">原価</th></tr></thead><tbody>${stale.sort((a,b)=>a.bDate.localeCompare(b.bDate)).slice(0,8).map(a=>`<tr><td>#${a.id}</td><td>${esc(a.sp)} ${esc(a.name)}${a.sex}</td><td class="n">${daysBetween(a.bDate,TODAY)}日</td><td class="n">${num(a.cost)}</td></tr>`).join('')}</tbody></table>${stale.length>8?`<div style="font-size:12px;color:var(--muted);margin-top:6px">ほか${stale.length-8}匹</div>`:''}`:'<p class="lead">なし</p>';
   $('ar').innerHTML=`<table><tbody>${Object.entries(ar).map(([k,v])=>`<tr><td>${k}</td><td class="n">${yen(v)}</td></tr>`).join('')}</tbody></table><div class="note" style="margin-top:8px">カード売上は「売上の日」と「入金の日」がずれるので、売掛金として残高を追いかけます。</div>`;
 }
 function arBalances(){
+  if(LIVE){const s=MF.tbBS?.sub['売掛金']||{},m={USEN:'USEN',STORES:'STORES',ペイペイ:'PayPay',ヤマトクレジット:'ヤマトクレジット',振込:'振込'},o={};Object.entries(m).forEach(([k,v])=>o[v]=s[k]||0);return o}
   const bal={};PAYS.filter(p=>p.ar).forEach(p=>bal[p.ar]=0);
   allSales().forEach(x=>{const p=PAYS.find(p=>p.k===x.pay);if(p.ar)bal[p.ar]+=x.price});
   months().filter(mo=>mo<ym(TODAY)).forEach(mo=>{recon(mo).forEach(r=>{bal[r.ar]-=r.sales})});
@@ -411,7 +423,7 @@ function arBalances(){
 }
 
 /* ===== 会計（マネーフォワード）CSV ===== */
-const MFKEY='reptile-mf';let MF={};
+const MFKEY=LIVE?'reptile-lr-mf-'+SEED.ver:'reptile-mf';let MF={};
 try{MF=JSON.parse(localStorage.getItem(MFKEY))||{}}catch(e){}
 function parseMFcsv(text){
   const rows=parseCSV(text),h=rows[0].map(x=>x.trim());
@@ -702,13 +714,14 @@ function renderImp(){
   ${R.map((r,i)=>`<tr${r.errs.length?' style="opacity:.55"':''}><td><input type="checkbox" ${r.on?'checked':''} ${r.errs.length?'disabled':''} onchange="IMP.rows[${i}].on=this.checked;renderImp()"></td><td>${r.line}</td><td>${r.date||'—'}</td><td>${esc(r.sup)}</td><td>${esc(r.sp)}</td><td>${esc(r.name)}</td><td>${esc(r.sex)}</td><td class="n">${r.cost?num(r.cost):'—'}</td><td class="n">${r.qty}</td><td>${esc(r.pay)}</td><td>${r.dead?'<span class="pill dead">死亡</span>':r.sold?`<span class="pill sold">販売済 ${r.sold.date.slice(2)}</span>`:'<span class="pill">在庫</span>'}</td><td>${r.errs.map(e=>`<span class="pill dead">${e}</span>`).join(' ')}${r.warns.map(e=>`<span class="pill old">${e}</span>`).join(' ')}${!r.errs.length&&!r.warns.length?'<span class="pill">OK</span>':''}</td></tr>`).join('')}</tbody></table></div>
   <div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn" ${heads?'':'disabled'} onclick="doImport()">登録する（在庫 ${heads-nSold-nDead}匹・${yen(stockAmt)}／販売済 ${nSold}匹${nDead?`／死亡 ${nDead}匹`:''}）</button><button class="btn ghost" onclick="IMP=null;renderImp()">やめる</button>
   <span style="font-size:12px;color:var(--muted)">赤＝取り込めない行／黄＝確認してほしい行（「登録済みの可能性」は最初はチェックを外しています）</span></div>`}
-function doImport(){
-  const bid='imp'+Date.now(),on=IMP.rows.filter(r=>r.on);let n=0;
+function doImport(){const n=importRows('imp'+Date.now());IMP=null;save();renderAll();renderImp();toast(`${n}匹を在庫に登録しました`)}
+function importRows(bid){
+  const on=IMP.rows.filter(r=>r.on);let n=0;
   DB.extraSups=DB.extraSups||[];
   on.forEach(r=>{if(r.sup!=='（未入力）'&&!supOf(r.sup))DB.extraSups.push({n:r.sup,inv:null});
     for(let i=0;i<r.qty;i++){const id=DB.seq++,a={id,sp:r.sp,name:r.name,sex:r.sex,bDate:r.date,sup:r.sup,cost:r.cost,costEx:r.costEx,bPay:r.pay,imp:bid};if(r.sold)a.sold={...r.sold,cust:'',tx:'x'+id};if(r.dead)a.dead=true;DB.animals.push(a);n++}});
   (DB.imports=DB.imports||[]).unshift({id:bid,at:new Date().toLocaleString('ja-JP'),file:IMP.file,n});
-  IMP=null;save();renderAll();renderImp();toast(`${n}匹を在庫に登録しました`)}
+  return n}
 function undoImport(bid){
   const t=DB.animals.filter(a=>a.imp===bid);
   if(!confirm(`この取込で登録した${t.length}匹（販売済として取り込んだ分も含む）を取り消します。よろしいですか？`))return;
@@ -745,7 +758,8 @@ function recon(mo){
   return PAYS.filter(p=>p.ar&&p.k!=='bank').map((p,i)=>{
     const sales=S.filter(x=>x.pay===p.k).reduce((t,x)=>t+x.price,0);
     let dep=DB.deposits[mo+p.k];
-    if(dep==null){dep=Math.round(sales*(1-p.fee/100));if(mo===monthStart(1)&&p.k==='usen')dep-=3300}
+    if(dep==null&&!LIVE){dep=Math.round(sales*(1-p.fee/100));if(mo===monthStart(1)&&p.k==='usen')dep-=3300}
+    if(dep==null)return{p,ar:p.ar,sales,dep:null,fee:null,rate:null,diff:null};
     const fee=sales-dep,rate=sales?fee/sales*100:0,diff=+(rate-p.fee).toFixed(2);
     return{p,ar:p.ar,sales,dep,fee,rate,diff};
   }).concat([(()=>{const p=PAYS[1],sales=S.filter(x=>x.pay==='bank').reduce((t,x)=>t+x.price,0);return{p,ar:p.ar,sales,dep:sales,fee:0,rate:0,diff:0}})()]);
@@ -759,7 +773,7 @@ function renderDaily(){
   const line=(label,arr,b)=>{const s=k=>arr.filter(x=>x.pay===k).reduce((t,x)=>t+x.price,0);const tot=arr.reduce((t,x)=>t+x.price,0);
     return`<tr${b?' style="font-weight:700;background:var(--surface2);color:var(--brand)"':''}><td>${label}</td><td class="n">${num(arr.filter(x=>x.kind==='生体').reduce((t,x)=>t+x.price,0))}</td><td class="n">${num(arr.filter(x=>x.kind!=='生体').reduce((t,x)=>t+x.price,0))}</td>${PAYS.map(p=>`<td class="n">${s(p.k)?num(s(p.k)):''}</td>`).join('')}<td class="n">${num(tot)}</td></tr>`};
   $('dRows').innerHTML=days.map(d=>line(d.slice(5),S.filter(x=>x.date===d))).join('')+line('月計',S,true);
-  $('recon').innerHTML=recon(mo).map(r=>{if(!r.sales&&!r.dep)return`<tr><td>${r.p.n}</td><td class="n">0</td><td class="n">0</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td style="color:var(--muted)">取引なし</td></tr>`;const ng=Math.abs(r.diff)>0.3;return`<tr><td>${r.p.n}</td><td class="n">${num(r.sales)}</td><td class="n">${num(r.dep)}</td><td class="n">${num(r.fee)}</td><td class="n">${r.rate.toFixed(2)}%</td><td class="n">${r.diff>0?'+':''}${r.diff.toFixed(2)}pt</td><td class="${ng?'diff-ng':'diff-ok'}">${ng?'要確認':'OK'}</td></tr>`}).join('');
+  $('recon').innerHTML=recon(mo).map(r=>{if(r.dep==null)return`<tr><td>${r.p.n}</td><td class="n">${num(r.sales)}</td><td class="n" style="color:var(--muted)">未入力</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td style="color:var(--muted)">入金データ待ち</td></tr>`;if(!r.sales&&!r.dep)return`<tr><td>${r.p.n}</td><td class="n">0</td><td class="n">0</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td style="color:var(--muted)">取引なし</td></tr>`;const ng=Math.abs(r.diff)>0.3;return`<tr><td>${r.p.n}</td><td class="n">${num(r.sales)}</td><td class="n">${num(r.dep)}</td><td class="n">${num(r.fee)}</td><td class="n">${r.rate.toFixed(2)}%</td><td class="n">${r.diff>0?'+':''}${r.diff.toFixed(2)}pt</td><td class="${ng?'diff-ng':'diff-ok'}">${ng?'要確認':'OK'}</td></tr>`}).join('');
 }
 
 /* ===== MF 仕訳 ===== */
@@ -781,7 +795,7 @@ function buildJournals(){
   }
   if($('mR').checked){
     const nx=new Date(mo+'-01');nx.setMonth(nx.getMonth()+1);nx.setDate(10);const dd=iso(nx);
-    recon(mo).filter(r=>r.sales&&r.p.k!=='bank').forEach(r=>{
+    recon(mo).filter(r=>r.sales&&r.p.k!=='bank'&&r.dep!=null).forEach(r=>{
       J.push({d:dd,dr:'普通預金',ds:'',dt:'対象外',amt:r.dep,cr:'売掛金',cs:r.ar,ct:'対象外',memo:`${r.ar} ${mo.slice(5)}月分 入金`});
       if(r.fee)J.push({d:dd,dr:'支払手数料',ds:'',dt:'非課仕入',amt:r.fee,cr:'売掛金',cs:r.ar,ct:'対象外',memo:`${r.ar} 決済手数料 ${mo.slice(5)}月分`});
     });
@@ -827,6 +841,10 @@ function hideBar(){$('testbar').style.display='none';try{sessionStorage.setItem(
 try{if(sessionStorage.getItem('reptile-bar')==='0')$('testbar').style.display='none'}catch(e){}
 
 function renderAll(){renderDash();renderMFDash();renderStock();renderPOS();renderBuy();renderDaily();renderCheck();renderMF()}
+if(LIVE){document.title='爬虫類ショップ 在庫・販売管理（LR）';document.querySelector('header .tag').textContent='LR・実データ';
+  document.querySelector('header button').textContent='台帳の状態に戻す';
+  $('testbar').querySelector('span').innerHTML=`<b>実データ版</b>　${esc(SEED.ver)} 時点の台帳とマネーフォワードの数字です。この画面で入力した内容は、この端末にだけ保存され、次の更新で台帳の内容に置き換わります。`;
+  document.querySelectorAll('#dash .toolbar label.btn, #dash .toolbar button.ghost').forEach(e=>e.style.display='none')}
 load();
 $('sp').innerHTML+=Object.keys(SPECIES).map(s=>`<option>${s}</option>`).join('');
 renderAll();
