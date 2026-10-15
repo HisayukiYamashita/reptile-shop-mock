@@ -616,7 +616,7 @@ function recon(mo){
   }).concat([(()=>{const p=PAYS[1],sales=S.filter(x=>x.pay==='bank').reduce((t,x)=>t+x.price,0);return{p,ar:p.ar,sales,dep:sales,fee:0,rate:0,diff:0}})()]);
 }
 function renderDaily(){
-  const ms=months();if(!$('dMonth').options.length){$('dMonth').innerHTML=ms.map(m=>`<option>${m}</option>`).join('');$('dMonth').value=monthStart(1)}
+  const ms=months();if(!ms.includes(ym(TODAY)))ms.unshift(ym(TODAY));if(!$('dMonth').options.length){$('dMonth').innerHTML=ms.map(m=>`<option>${m}</option>`).join('');$('dMonth').value=ym(TODAY)}
   const mo=$('dMonth').value||ms[0];
   const S=allSales().filter(x=>ym(x.date)===mo);
   const days=[...new Set(S.map(x=>x.date))].sort();
@@ -624,7 +624,7 @@ function renderDaily(){
   const line=(label,arr,b)=>{const s=k=>arr.filter(x=>x.pay===k).reduce((t,x)=>t+x.price,0);const tot=arr.reduce((t,x)=>t+x.price,0);
     return`<tr${b?' style="font-weight:700;background:var(--surface2);color:var(--brand)"':''}><td>${label}</td><td class="n">${num(arr.filter(x=>x.kind==='生体').reduce((t,x)=>t+x.price,0))}</td><td class="n">${num(arr.filter(x=>x.kind!=='生体').reduce((t,x)=>t+x.price,0))}</td>${PAYS.map(p=>`<td class="n">${s(p.k)?num(s(p.k)):''}</td>`).join('')}<td class="n">${num(tot)}</td></tr>`};
   $('dRows').innerHTML=days.map(d=>line(d.slice(5),S.filter(x=>x.date===d))).join('')+line('月計',S,true);
-  $('recon').innerHTML=recon(mo).map(r=>{const ng=Math.abs(r.diff)>0.3;return`<tr><td>${r.p.n}</td><td class="n">${num(r.sales)}</td><td class="n">${num(r.dep)}</td><td class="n">${num(r.fee)}</td><td class="n">${r.rate.toFixed(2)}%</td><td class="n">${r.diff>0?'+':''}${r.diff.toFixed(2)}pt</td><td class="${ng?'diff-ng':'diff-ok'}">${ng?'要確認':'OK'}</td></tr>`}).join('');
+  $('recon').innerHTML=recon(mo).map(r=>{if(!r.sales&&!r.dep)return`<tr><td>${r.p.n}</td><td class="n">0</td><td class="n">0</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td style="color:var(--muted)">取引なし</td></tr>`;const ng=Math.abs(r.diff)>0.3;return`<tr><td>${r.p.n}</td><td class="n">${num(r.sales)}</td><td class="n">${num(r.dep)}</td><td class="n">${num(r.fee)}</td><td class="n">${r.rate.toFixed(2)}%</td><td class="n">${r.diff>0?'+':''}${r.diff.toFixed(2)}pt</td><td class="${ng?'diff-ng':'diff-ok'}">${ng?'要確認':'OK'}</td></tr>`}).join('');
 }
 
 /* ===== MF 仕訳 ===== */
