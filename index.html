@@ -128,13 +128,22 @@ pre{background:#1f2a24;color:#dfe9e2;padding:12px;border-radius:8px;overflow:aut
 <section id="stock">
   <h2><span class="en">STOCK</span>在庫（個体台帳）</h2>
   <p class="lead">生体は1匹ごとに管理番号を振り、仕入原価と販売価格をひも付けます。Excelの「生体（購入）」「生体（販売）」の2シートを1つにまとめたイメージです。</p>
+  <div class="card" style="margin-bottom:14px">
+    <h3>月末在庫（棚卸）</h3>
+    <div class="toolbar"><label style="font-size:12px;color:var(--muted)">対象月 <select id="invMonth" onchange="renderInv()"></select></label>
+      <span id="invAsOf" style="font-size:12px;color:var(--muted)"></span><span style="flex:1"></span>
+      <button class="btn ghost sm" onclick="dlInv()">棚卸表をExcelで出力</button></div>
+    <div class="grid kpis" id="invKpis"></div>
+    <div class="tbl" style="margin-top:10px;max-height:none"><table><thead><tr><th>種類</th><th class="n">頭数</th><th class="n">原価（税込）</th><th class="n">原価（税抜）</th><th class="n">消費税相当</th></tr></thead><tbody id="invRows"></tbody></table></div>
+    <div class="note">その月の末日時点で「仕入済み・未販売・死亡でない」個体を集計します。月を選べば過去の月末在庫もさかのぼって出ます。税抜は、Excelから取り込んだ個体は台帳の「仕入金額」（税抜）をそのまま、手入力の個体は税込÷1.1で計算しています。</div>
+  </div>
   <div class="toolbar">
     <input id="q" placeholder="品目・仕入先で検索" oninput="renderStock()">
     <select id="st" onchange="renderStock()"><option value="in">在庫のみ</option><option value="sold">販売済のみ</option><option value="all">すべて</option></select>
     <select id="sp" onchange="renderStock()"><option value="">全種類</option></select>
     <span class="sp" style="flex:1"></span><span id="stocksum" style="font-size:12px;color:var(--muted)"></span>
   </div>
-  <div class="tbl"><table><thead><tr><th>管理No</th><th>種類</th><th>品目（モルフ）</th><th>性別</th><th>仕入日</th><th>仕入先</th><th class="n">原価(税込)</th><th>状態</th><th>販売日</th><th class="n">売価(税込)</th><th class="n">粗利</th><th>決済</th><th></th></tr></thead><tbody id="stockrows"></tbody></table></div>
+  <div class="tbl"><table><thead><tr><th>管理No</th><th>種類</th><th>品目（モルフ）</th><th>性別</th><th>仕入日</th><th>仕入先</th><th class="n">原価(税込)</th><th class="n">原価(税抜)</th><th>状態</th><th>販売日</th><th class="n">売価(税込)</th><th class="n">粗利</th><th>決済</th><th></th></tr></thead><tbody id="stockrows"></tbody></table></div>
 </section>
 
 <!-- POS -->
@@ -399,12 +408,36 @@ function renderStock(){
   let rows=DB.animals.filter(a=>(st==='all'||(st==='in'?!a.sold&&!a.dead:!!a.sold))&&(!sp||a.sp===sp)&&(!q||(a.name+a.sup+a.sp).toLowerCase().includes(q)));
   rows=rows.slice().sort((a,b)=>b.id-a.id);
   const inv=DB.animals.filter(a=>!a.sold&&!a.dead);
-  $('stocksum').textContent=`在庫 ${inv.length}匹／原価合計 ${yen(inv.reduce((t,a)=>t+a.cost,0))}`;
+  $('stocksum').textContent=`現在の在庫 ${inv.length}匹／原価 税込 ${yen(inv.reduce((t,a)=>t+a.cost,0))}・税抜 ${yen(inv.reduce((t,a)=>t+exOf(a),0))}`;renderInv();
   $('stockrows').innerHTML=rows.map(a=>{
     const age=daysBetween(a.bDate,TODAY);
     const status=a.sold?'<span class="pill sold">販売済</span>':a.dead?'<span class="pill dead">死着・死亡</span>':age>90?`<span class="pill old">在庫 ${age}日</span>`:`<span class="pill">在庫 ${age}日</span>`;
-    return`<tr><td>#${a.id}</td><td>${esc(a.sp)}</td><td>${esc(a.name)}</td><td>${a.sex}</td><td>${a.bDate}</td><td>${esc(a.sup)}</td><td class="n">${num(a.cost)}</td><td>${status}</td><td>${a.sold?.date||''}</td><td class="n">${a.sold?num(a.sold.price):''}</td><td class="n">${a.sold?num(a.sold.price-a.cost):''}</td><td>${a.sold?payName(a.sold.pay):''}</td><td>${!a.sold&&!a.dead?`<button class="btn ghost sm" onclick="goSell(${a.id})">販売</button>`:''}</td></tr>`}).join('');
+    return`<tr><td>#${a.id}</td><td>${esc(a.sp)}</td><td>${esc(a.name)}</td><td>${a.sex}</td><td>${a.bDate}</td><td>${esc(a.sup)}</td><td class="n">${num(a.cost)}</td><td class="n">${num(exOf(a))}</td><td>${status}</td><td>${a.sold?.date||''}</td><td class="n">${a.sold?num(a.sold.price):''}</td><td class="n">${a.sold?num(a.sold.price-a.cost):''}</td><td>${a.sold?payName(a.sold.pay):''}</td><td>${!a.sold&&!a.dead?`<button class="btn ghost sm" onclick="goSell(${a.id})">販売</button>`:''}</td></tr>`}).join('');
 }
+/* ===== 月末在庫（棚卸） ===== */
+const exOf=a=>a.costEx!=null?a.costEx:Math.round(a.cost/1.1);
+function monthEnd(mo){const d=new Date(mo+'-01');d.setMonth(d.getMonth()+1);d.setDate(0);return iso(d)}
+function invAt(mo){const end=monthEnd(mo);return DB.animals.filter(a=>a.bDate&&a.bDate<=end&&!a.dead&&!(a.sold&&a.sold.date<=end))}
+function renderInv(){
+  const sel=$('invMonth'),first=DB.animals.map(a=>a.bDate).filter(Boolean).sort()[0]||TODAY;
+  if(!sel.options.length||sel.dataset.first!==first){const ms=[];for(let m=ym(TODAY);m>=ym(first);m=(d=>{d.setMonth(d.getMonth()-1);return iso(d).slice(0,7)})(new Date(m+'-01')))ms.push(m);
+    const keep=sel.value;sel.innerHTML=ms.map(m=>`<option value="${m}">${m.replace('-','年')}月末</option>`).join('');sel.dataset.first=first;sel.value=keep&&ms.includes(keep)?keep:(ms.includes(monthStart(1))?monthStart(1):ms[0])}
+  const mo=sel.value,L=invAt(mo),inc=L.reduce((t,a)=>t+a.cost,0),ex=L.reduce((t,a)=>t+exOf(a),0);
+  $('invAsOf').textContent=`${monthEnd(mo)} 時点${mo===ym(TODAY)?'（今月は今日までの動きで計算）':''}`;
+  $('invKpis').innerHTML=[['在庫頭数',L.length+'匹',`うち原価0円 ${L.filter(a=>!a.cost).length}匹`],['原価（税込）',yen(inc),'入力した金額の合計'],['原価（税抜）',yen(ex),'棚卸高に使う金額（税抜経理）'],['消費税相当',yen(inc-ex),'税込−税抜']]
+    .map(k=>`<div class="card kpi"><div class="l">${k[0]}</div><div class="v">${k[1]}</div><div class="s">${k[2]}</div></div>`).join('');
+  const g={};L.forEach(a=>{const x=g[a.sp]=g[a.sp]||{n:0,i:0,e:0};x.n++;x.i+=a.cost;x.e+=exOf(a)});
+  $('invRows').innerHTML=Object.entries(g).sort((a,b)=>b[1].i-a[1].i).map(([k,x])=>`<tr><td>${esc(k)}</td><td class="n">${x.n}</td><td class="n">${num(x.i)}</td><td class="n">${num(x.e)}</td><td class="n">${num(x.i-x.e)}</td></tr>`).join('')
+    +`<tr style="font-weight:700;background:var(--surface2);color:var(--brand)"><td>合計</td><td class="n">${L.length}</td><td class="n">${num(inc)}</td><td class="n">${num(ex)}</td><td class="n">${num(inc-ex)}</td></tr>`;
+}
+function dlInv(){if(typeof XLSX==='undefined'){toast('Excel部品が読み込めていません');return}
+  const mo=$('invMonth').value,end=monthEnd(mo),L=invAt(mo).sort((a,b)=>a.bDate.localeCompare(b.bDate)||a.id-b.id);
+  const aoa=[[`棚卸表　${end} 時点`],[],['管理No','種類','品目（モルフ）','性別','仕入日','仕入先','原価（税込）','原価（税抜）','消費税相当','在庫日数']];
+  L.forEach(a=>aoa.push([a.id,a.sp,a.name,a.sex,a.bDate,a.sup,a.cost,exOf(a),a.cost-exOf(a),daysBetween(a.bDate,end)]));
+  const n=L.length+3;aoa.push(['合計','','',`${L.length}匹`,'','',{f:`SUM(G4:G${n})`},{f:`SUM(H4:H${n})`},{f:`SUM(I4:I${n})`},'']);
+  const ws=XLSX.utils.aoa_to_sheet(aoa);ws['!cols']=[8,14,30,6,12,16,13,13,12,9].map(w=>({wch:w}));
+  for(let r=4;r<=n+1;r++)['G','H','I'].forEach(c=>{const x=ws[c+r];if(x)x.z='#,##0'});
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'棚卸表');XLSX.writeFile(wb,`棚卸表_${mo}.xlsx`);toast('棚卸表を出力しました')}
 function goSell(id){showTab('pos');$('posAnimal').value=id;$('posPrice').focus()}
 
 /* ===== POS ===== */
@@ -543,7 +576,7 @@ function readImpSheet(){
     let name=String(r[c.name]??'').replace(/　/g,' ').trim();if(!name||/集計|合計/.test(name))return null;
     let sex=c.sex>=0?String(r[c.sex]).trim():'';const m=name.match(/[♂♀]/)||(/メス/.test(name)?['♀']:/オス/.test(name)?['♂']:null);if(!sex&&m)sex=m[0];if(c.sex<0)name=name.replace(/\s*[♂♀]\s*/g,' ').trim();if(!/^[♂♀]$/.test(sex))sex=sex?sex:'不明';
     const base=+String(r[c.cost]??'').replace(/[,¥￥円]/g,'')||0,tax=c.tax>=0?+r[c.tax]||0:0;
-    const cost=Math.round(IMP.taxMode==='add'?base+tax:IMP.taxMode==='x1.1'?base*1.1:base);
+    const cost=Math.round(IMP.taxMode==='add'?base+tax:IMP.taxMode==='x1.1'?base*1.1:base),costEx=Math.round(IMP.taxMode==='incl'?base/1.1:base);
     const date=cellDate(r[c.date]),sup=c.sup>=0?String(r[c.sup]).trim():'',qty=c.qty>=0?Math.max(1,parseInt(r[c.qty])||1):1;
     const sp=c.sp>=0&&SPECIES[String(r[c.sp]).trim()]?String(r[c.sp]).trim():inferSp(name);
     let pay=c.pay>=0?String(r[c.pay]).trim().replace('振込み','振込'):'';if(!pay)pay='振込';
@@ -553,7 +586,7 @@ function readImpSheet(){
     const errs=[],warns=[];if(!date)errs.push('仕入日なし');if(!cost)warns.push('原価0円（自家繁殖？）');if(!sup)warns.push('仕入先なし');
     else if(!supOf(sup))warns.push('新しい仕入先');
     const dup=exist.has([date,sup||'（未入力）',name,cost].join('|'));if(dup)warns.push('登録済みの可能性');
-    return{line:hi+2+i,date,sup:sup||'（未入力）',sp,name,sex,cost,qty,pay,sold,dead,errs,warns,on:!errs.length&&!dup}}).filter(Boolean);
+    return{line:hi+2+i,date,sup:sup||'（未入力）',sp,name,sex,cost,costEx,qty,pay,sold,dead,errs,warns,on:!errs.length&&!dup}}).filter(Boolean);
   renderImp()}
 function renderImp(){
   const box=$('impBox');if(!IMP){box.innerHTML='';return}
@@ -571,7 +604,7 @@ function doImport(){
   const bid='imp'+Date.now(),on=IMP.rows.filter(r=>r.on);let n=0;
   DB.extraSups=DB.extraSups||[];
   on.forEach(r=>{if(r.sup!=='（未入力）'&&!supOf(r.sup))DB.extraSups.push({n:r.sup,inv:null});
-    for(let i=0;i<r.qty;i++){const id=DB.seq++,a={id,sp:r.sp,name:r.name,sex:r.sex,bDate:r.date,sup:r.sup,cost:r.cost,bPay:r.pay,imp:bid};if(r.sold)a.sold={...r.sold,cust:'',tx:'x'+id};if(r.dead)a.dead=true;DB.animals.push(a);n++}});
+    for(let i=0;i<r.qty;i++){const id=DB.seq++,a={id,sp:r.sp,name:r.name,sex:r.sex,bDate:r.date,sup:r.sup,cost:r.cost,costEx:r.costEx,bPay:r.pay,imp:bid};if(r.sold)a.sold={...r.sold,cust:'',tx:'x'+id};if(r.dead)a.dead=true;DB.animals.push(a);n++}});
   (DB.imports=DB.imports||[]).unshift({id:bid,at:new Date().toLocaleString('ja-JP'),file:IMP.file,n});
   IMP=null;save();renderAll();renderImp();toast(`${n}匹を在庫に登録しました`)}
 function undoImport(bid){
