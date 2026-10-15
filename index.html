@@ -87,6 +87,7 @@ pre{background:#1f2a24;color:#dfe9e2;padding:12px;border-radius:8px;overflow:aut
 .fb textarea{width:100%;font:inherit;font-size:13px;padding:8px;border:1px solid var(--line);border-radius:2px;background:var(--surface2);color:var(--ink);resize:vertical}
 .fbl{font-size:11px;color:var(--muted);margin-top:6px}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 <header>
@@ -170,7 +171,14 @@ pre{background:#1f2a24;color:#dfe9e2;padding:12px;border-radius:8px;overflow:aut
 <!-- 仕入 -->
 <section id="buy">
   <h2><span class="en">PURCHASE</span>仕入登録</h2>
-  <p class="lead">同じ仕入先からまとめて入った個体を一度に登録できます。1匹ずつ管理Noが振られ、そのまま在庫に並びます。</p>
+  <p class="lead">仕入はExcelでまとめて取り込むか、1件ずつ手で登録します。どちらも1匹ずつ管理Noが振られ、そのまま在庫（STOCK）に並びます。</p>
+  <div class="card">
+    <h3>Excelで取り込む</h3>
+    <p style="font-size:13px;margin:0 0 10px">今お使いの「爬虫類販売台帳」の「生体（購入）」シートをそのまま読み込めます。新しく作る場合はテンプレートをお使いください。</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><label class="btn" style="display:inline-block">Excelファイルを選ぶ<input type="file" accept=".xlsx,.xls,.csv" onchange="onImpFile(this)" style="display:none"></label><button class="btn ghost" onclick="dlImpTemplate()">テンプレートをダウンロード</button></div>
+    <div id="impBox"></div><div id="impLog"></div>
+  </div>
+  <h3 style="margin:18px 0 8px;font-size:14px">1件ずつ登録する</h3>
   <div class="card">
     <div class="form">
       <label>仕入日<input id="bDate" type="date"></label>
@@ -499,13 +507,83 @@ let CK_SMO='';
 function trySample(){const t=genSample();loadCSVText(t,`サンプル_${payName($('cProv').value).replace('（カード）','')}_${CK_SMO}.csv`)}
 function dlSample(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['﻿'+genSample()],{type:'text/csv'}));a.download=`サンプル_${$('cProv').value}_${CK_SMO}.csv`;a.click()}
 
+/* ===== 仕入のExcel取込 ===== */
+const allSups=()=>SUPS.concat(DB.extraSups||[]);
+const supOf=n=>allSups().find(x=>x.n===n);
+let IMP=null;
+function inferSp(name){return /レオパ(?!ード)|ヒョウモン|ゲッコー/i.test(name)?'レオパ':/ニシアフ/.test(name)?'ニシアフ':/コーン/.test(name)?'コーンスネーク':'ボールパイソン'}
+function cellDate(v){if(v instanceof Date)return iso(v);if(typeof v==='number'&&v>20000&&v<80000){const d=new Date(Math.round((v-25569)*864e5));return iso(new Date(d.getTime()+d.getTimezoneOffset()*6e4))}return normDate(v||'')}
+function onImpFile(inp){const f=inp.files[0];inp.value='';if(!f)return;
+  if(typeof XLSX==='undefined'){toast('Excel読込の部品が読み込めていません。通信環境を確認してください');return}
+  f.arrayBuffer().then(b=>{const wb=XLSX.read(b,{type:'array',cellDates:true});
+    const sh=wb.SheetNames.find(n=>/購入|仕入/.test(n))||wb.SheetNames[0];
+    IMP={wb,file:f.name,sheet:sh};readImpSheet();toast(`${f.name} を読み込みました`)}).catch(()=>toast('ファイルを読み込めませんでした'))}
+function readImpSheet(){
+  const rows=XLSX.utils.sheet_to_json(IMP.wb.Sheets[IMP.sheet],{header:1,raw:true,defval:''});
+  const hi=rows.slice(0,15).findIndex(r=>r.some(c=>/仕入日|日付/.test(c))&&r.some(c=>/品\s*目|モルフ|品名/.test(String(c).replace(/　/g,''))));
+  if(hi<0){IMP.rows=[];IMP.err='見出し行（「仕入日」「品目」を含む行）が見つかりません';renderImp();return}
+  const h=rows[hi].map(c=>String(c).replace(/[\s　]/g,'')),f=re=>h.findIndex(x=>re.test(x));
+  const c={date:f(/仕入日|日付/),sup:f(/仕入先|取引先/),sp:f(/^(種類|種別)$/),name:f(/品目|モルフ|品名/),sex:f(/性別|雌雄/),cost:f(/原価|仕入金額|仕入価格|単価/),qty:f(/匹数|数量/),pay:f(/支払(形態|方法)/)};
+  c.tax=h.findIndex((x,i)=>/消費税/.test(x)&&i>c.cost);c.sdate=f(/販売日/);c.sprice=f(/販売金額|売価/);
+  const payAt={};const ps=IMP.wb.SheetNames.find(n=>n!==IMP.sheet&&/販売/.test(n));
+  if(ps&&c.sdate>=0){const pr=XLSX.utils.sheet_to_json(IMP.wb.Sheets[ps],{header:1,raw:true,defval:''});
+    const ph=(pr[hi]||[]).map(x=>String(x).replace(/[\s\u3000]/g,'')),pc=[[/^振込$/,'bank'],[/USEN/i,'usen'],[/STORES/i,'stores'],[/ヤマト/,'yamato'],[/ﾍﾟｲﾍﾟｲ|ペイペイ|PayPay/i,'paypay']].map(([re,k])=>[ph.findIndex(x=>re.test(x)),k]).filter(x=>x[0]>=0);
+    pr.forEach((r,i)=>{const hit=pc.find(([ci])=>+r[ci]>0);if(hit)payAt[i]=hit[1]});IMP.paySheet=ps}
+  const exist=new Set(DB.animals.map(a=>[a.bDate,a.sup,a.name,a.cost].join('|')));
+  IMP.err='';IMP.taxMode=c.tax>=0?'add':/税抜/.test(h[c.cost]||'')?'x1.1':'incl';
+  IMP.rows=rows.slice(hi+1).map((r,i)=>{
+    let name=String(r[c.name]??'').replace(/　/g,' ').trim();if(!name||/集計|合計/.test(name))return null;
+    let sex=c.sex>=0?String(r[c.sex]).trim():'';const m=name.match(/[♂♀]/)||(/メス/.test(name)?['♀']:/オス/.test(name)?['♂']:null);if(!sex&&m)sex=m[0];if(c.sex<0)name=name.replace(/\s*[♂♀]\s*/g,' ').trim();if(!/^[♂♀]$/.test(sex))sex=sex?sex:'不明';
+    const base=+String(r[c.cost]??'').replace(/[,¥￥円]/g,'')||0,tax=c.tax>=0?+r[c.tax]||0:0;
+    const cost=Math.round(IMP.taxMode==='add'?base+tax:IMP.taxMode==='x1.1'?base*1.1:base);
+    const date=cellDate(r[c.date]),sup=c.sup>=0?String(r[c.sup]).trim():'',qty=c.qty>=0?Math.max(1,parseInt(r[c.qty])||1):1;
+    const sp=c.sp>=0&&SPECIES[String(r[c.sp]).trim()]?String(r[c.sp]).trim():inferSp(name);
+    let pay=c.pay>=0?String(r[c.pay]).trim().replace('振込み','振込'):'';if(!pay)pay='振込';
+    const sdate=c.sdate>=0?cellDate(r[c.sdate]):'',sprice=c.sprice>=0?Math.round(+r[c.sprice]||0):0;
+    const dead=/死亡|死着/.test(String(c.sdate>=0?r[c.sdate]:'')+String(c.sprice>=0?r[c.sprice]:''));
+    const sold=!dead&&sdate&&sprice?{date:sdate,price:sprice,pay:payAt[hi+1+i]||'cash'}:null;
+    const errs=[],warns=[];if(!date)errs.push('仕入日なし');if(!cost)warns.push('原価0円（自家繁殖？）');if(!sup)warns.push('仕入先なし');
+    else if(!supOf(sup))warns.push('新しい仕入先');
+    const dup=exist.has([date,sup||'（未入力）',name,cost].join('|'));if(dup)warns.push('登録済みの可能性');
+    return{line:hi+2+i,date,sup:sup||'（未入力）',sp,name,sex,cost,qty,pay,sold,dead,errs,warns,on:!errs.length&&!dup}}).filter(Boolean);
+  renderImp()}
+function renderImp(){
+  const box=$('impBox');if(!IMP){box.innerHTML='';return}
+  const sheets=IMP.wb.SheetNames.map(n=>`<option${n===IMP.sheet?' selected':''}>${esc(n)}</option>`).join('');
+  if(IMP.err){box.innerHTML=`<div class="toolbar" style="margin-top:12px"><label style="font-size:12px;color:var(--muted)">シート <select onchange="IMP.sheet=this.value;readImpSheet()">${sheets}</select></label></div><p class="diff-ng">${IMP.err}</p>`;return}
+  const R=IMP.rows,on=R.filter(r=>r.on),heads=on.reduce((t,r)=>t+r.qty,0),amt=on.reduce((t,r)=>t+r.cost*r.qty,0),nSold=on.filter(r=>r.sold).reduce((t,r)=>t+r.qty,0),nDead=on.filter(r=>r.dead).reduce((t,r)=>t+r.qty,0),stockAmt=on.filter(r=>!r.sold&&!r.dead).reduce((t,r)=>t+r.cost*r.qty,0);
+  const tm={add:'原価＝仕入金額＋消費税（Excel台帳の形式と判定）','x1.1':'原価＝仕入金額（税抜）×1.1',incl:'原価＝金額の列をそのまま税込として使用'}[IMP.taxMode];
+  box.innerHTML=`<div class="toolbar" style="margin-top:14px"><label style="font-size:12px;color:var(--muted)">シート <select onchange="IMP.sheet=this.value;readImpSheet()">${sheets}</select></label>
+    <span style="font-size:12px;color:var(--muted)">${esc(IMP.file)}　${R.length}行を読み取り　／　${tm}${IMP.paySheet?`　／　販売済の決済手段は「${esc(IMP.paySheet)}」シートから`:''}</span></div>
+  <div class="tbl" style="max-height:380px"><table><thead><tr><th><input type="checkbox" ${on.length===R.filter(r=>!r.errs.length).length?'checked':''} onchange="IMP.rows.forEach(r=>{if(!r.errs.length)r.on=this.checked});renderImp()"></th><th>行</th><th>仕入日</th><th>仕入先</th><th>種類</th><th>品目</th><th>性別</th><th class="n">原価(税込)</th><th class="n">匹数</th><th>支払</th><th>状態</th><th>チェック</th></tr></thead><tbody>
+  ${R.map((r,i)=>`<tr${r.errs.length?' style="opacity:.55"':''}><td><input type="checkbox" ${r.on?'checked':''} ${r.errs.length?'disabled':''} onchange="IMP.rows[${i}].on=this.checked;renderImp()"></td><td>${r.line}</td><td>${r.date||'—'}</td><td>${esc(r.sup)}</td><td>${esc(r.sp)}</td><td>${esc(r.name)}</td><td>${esc(r.sex)}</td><td class="n">${r.cost?num(r.cost):'—'}</td><td class="n">${r.qty}</td><td>${esc(r.pay)}</td><td>${r.dead?'<span class="pill dead">死亡</span>':r.sold?`<span class="pill sold">販売済 ${r.sold.date.slice(2)}</span>`:'<span class="pill">在庫</span>'}</td><td>${r.errs.map(e=>`<span class="pill dead">${e}</span>`).join(' ')}${r.warns.map(e=>`<span class="pill old">${e}</span>`).join(' ')}${!r.errs.length&&!r.warns.length?'<span class="pill">OK</span>':''}</td></tr>`).join('')}</tbody></table></div>
+  <div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn" ${heads?'':'disabled'} onclick="doImport()">登録する（在庫 ${heads-nSold-nDead}匹・${yen(stockAmt)}／販売済 ${nSold}匹${nDead?`／死亡 ${nDead}匹`:''}）</button><button class="btn ghost" onclick="IMP=null;renderImp()">やめる</button>
+  <span style="font-size:12px;color:var(--muted)">赤＝取り込めない行／黄＝確認してほしい行（「登録済みの可能性」は最初はチェックを外しています）</span></div>`}
+function doImport(){
+  const bid='imp'+Date.now(),on=IMP.rows.filter(r=>r.on);let n=0;
+  DB.extraSups=DB.extraSups||[];
+  on.forEach(r=>{if(r.sup!=='（未入力）'&&!supOf(r.sup))DB.extraSups.push({n:r.sup,inv:null});
+    for(let i=0;i<r.qty;i++){const id=DB.seq++,a={id,sp:r.sp,name:r.name,sex:r.sex,bDate:r.date,sup:r.sup,cost:r.cost,bPay:r.pay,imp:bid};if(r.sold)a.sold={...r.sold,cust:'',tx:'x'+id};if(r.dead)a.dead=true;DB.animals.push(a);n++}});
+  (DB.imports=DB.imports||[]).unshift({id:bid,at:new Date().toLocaleString('ja-JP'),file:IMP.file,n});
+  IMP=null;save();renderAll();renderImp();toast(`${n}匹を在庫に登録しました`)}
+function undoImport(bid){
+  const t=DB.animals.filter(a=>a.imp===bid);
+  if(!confirm(`この取込で登録した${t.length}匹（販売済として取り込んだ分も含む）を取り消します。よろしいですか？`))return;
+  DB.animals=DB.animals.filter(a=>a.imp!==bid);const im=DB.imports.find(x=>x.id===bid);if(im)im.undone=true;
+  save();renderAll();toast('取込を取り消しました')}
+function renderImpLog(){const L=(DB.imports||[]).slice(0,5);
+  $('impLog').innerHTML=L.length?`<div style="font-size:12px;color:var(--muted);margin:12px 0 4px">取込の履歴</div><table><tbody>${L.map(x=>`<tr><td>${esc(x.at)}</td><td>${esc(x.file)}</td><td class="n">${x.n}匹</td><td>${x.undone?'<span class="pill sold">取消済</span>':`<button class="btn ghost sm" onclick="undoImport('${x.id}')">取り消す</button>`}</td></tr>`).join('')}</tbody></table>`:''}
+function dlImpTemplate(){if(typeof XLSX==='undefined'){toast('Excel部品が読み込めていません');return}
+  const ws=XLSX.utils.aoa_to_sheet([['仕入日','仕入先','種類','品目（モルフ）','性別','原価（税込）','匹数','支払方法','メモ'],[TODAY,'A爬虫類卸','ボールパイソン','Pastel Clown','♂',33000,1,'振込',''],[TODAY,'Bブリーダー','レオパ','マックスノー','♀',12100,2,'現金','']]);
+  ws['!cols']=[12,14,14,22,6,12,6,12,20].map(w=>({wch:w}));const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'仕入');XLSX.writeFile(wb,'仕入取込テンプレート.xlsx')}
+
 /* ===== 仕入 ===== */
 function renderBuy(){
-  $('bSup').innerHTML=SUPS.map(s=>`<option>${s.n}</option>`).join('');
+  $('bSup').innerHTML=allSups().map(s=>`<option>${esc(s.n)}</option>`).join('');renderImpLog();
   $('bSp').innerHTML=Object.keys(SPECIES).map(s=>`<option>${s}</option>`).join('');
   if(!$('bDate').value)$('bDate').value=TODAY;
   const rows=DB.animals.slice().sort((a,b)=>b.bDate.localeCompare(a.bDate)||b.id-a.id).slice(0,40);
-  $('buyrows').innerHTML=rows.map(a=>{const s=SUPS.find(x=>x.n===a.sup);return`<tr><td>${a.bDate}</td><td>${esc(a.sup)}</td><td>${s?.inv?'<span class="pill">登録あり</span>':'<span class="pill old">なし</span>'}</td><td>#${a.id}</td><td>${esc(a.sp)} ${esc(a.name)}${a.sex}</td><td class="n">${num(a.cost)}</td><td>${a.bPay}</td></tr>`}).join('');
+  $('buyrows').innerHTML=rows.map(a=>{const s=supOf(a.sup);return`<tr><td>${a.bDate}</td><td>${esc(a.sup)}</td><td>${s?.inv?'<span class="pill">登録あり</span>':s&&s.inv===null?'<span class="pill old">未設定</span>':'<span class="pill old">なし</span>'}</td><td>#${a.id}</td><td>${esc(a.sp)} ${esc(a.name)}${a.sex}</td><td class="n">${num(a.cost)}</td><td>${a.bPay}</td></tr>`}).join('');
 }
 function addPurchase(){
   const name=$('bName').value.trim(),cost=+$('bCost').value,qty=Math.max(1,+$('bQty').value||1);
@@ -551,7 +629,7 @@ function buildJournals(){
       Object.keys(g).sort().forEach(k=>{const[d,pay,kind]=k.split('|'),[dr,ds]=drOf(pay);J.push({d,dr,ds,dt:'対象外',amt:g[k],cr:'売上高',cs:kind,ct:'課税売上 10%',memo:`${kind}売上 ${payName(pay)} 日計`})})}
   }
   if($('mP').checked){
-    DB.animals.filter(a=>ym(a.bDate)===mo).forEach(a=>{const s=SUPS.find(x=>x.n===a.sup);const cr=a.bPay==='現金'?'現金':a.bPay==='振込'?'普通預金':'買掛金';
+    DB.animals.filter(a=>ym(a.bDate)===mo).forEach(a=>{const s=supOf(a.sup);const cr=a.bPay==='現金'?'現金':a.bPay==='振込'?'普通預金':'買掛金';
       J.push({d:a.bDate,dr:'仕入高',ds:'生体',dt:s?.inv?'課税仕入 10%':'課税仕入 10%（非適格）',amt:a.cost,cr,cs:'',ct:'対象外',memo:`${a.sup} #${a.id} ${a.sp} ${a.name}`,partner:a.sup})});
     DB.purchases.filter(p=>ym(p.date)===mo).forEach(p=>J.push({d:p.date,dr:'仕入高',ds:'餌・用品',dt:'課税仕入 10%',amt:p.amt,cr:'普通預金',cs:'',ct:'対象外',memo:`${p.sup} ${p.n}`,partner:p.sup}));
   }
