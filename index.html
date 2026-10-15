@@ -164,7 +164,11 @@ pre{background:#1f2a24;color:#dfe9e2;padding:12px;border-radius:8px;overflow:aut
       <div class="total" id="posTotal">¥0</div>
       <div style="text-align:right;color:var(--muted);font-size:12px" id="posGp"></div>
       <button class="btn" style="width:100%;margin-top:12px" id="posDone" onclick="checkout()">販売を確定</button>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px">生体を選んで販売価格を入れたら、そのまま「販売を確定」を押せます（「＋生体を追加」は複数匹をまとめて会計するとき）。</div>
     </div>
+  </div>
+  <div class="card" style="margin-top:12px"><h3>最近の販売（登録できたかここで確認）</h3>
+    <div class="tbl" style="max-height:320px"><table><thead><tr><th>販売日</th><th>明細</th><th class="n">金額</th><th>決済</th><th></th></tr></thead><tbody id="posRecent"></tbody></table></div>
   </div>
 </section>
 
@@ -413,12 +417,16 @@ function renderPOS(){
   $('cart').innerHTML=cart.length?cart.map((c,i)=>`<tr><td>${esc(c.label)}</td><td class="n">${num(c.price)}</td><td class="n">${num(c.price-c.cost)}</td><td><button class="btn ghost sm" onclick="cart.splice(${i},1);renderPOS()">削除</button></td></tr>`).join(''):'<tr><td colspan="4" style="color:var(--muted)">まだ明細がありません</td></tr>';
   const t=cart.reduce((s,c)=>s+c.price,0),g=cart.reduce((s,c)=>s+c.price-c.cost,0);
   $('posTotal').textContent=yen(t);$('posGp').textContent=cart.length?`粗利 ${yen(g)}（${(g/t*100).toFixed(1)}%）`:'';
-  $('posDone').disabled=!cart.length;
+  $('posDone').textContent=cart.length?`販売を確定（${yen(t)}）`:'販売を確定';
+  const rec=allSales().filter(x=>x.tx&&x.tx[0]==='t').sort((a,b)=>b.tx.localeCompare(a.tx)).slice(0,10);
+  $('posRecent').innerHTML=rec.length?rec.map(x=>`<tr><td>${x.date}</td><td>${esc(x.label)}</td><td class="n">${num(x.price)}</td><td>${payName(x.pay)}</td><td><button class="btn ghost sm" onclick="cancelSale('${x.tx}')">取消</button></td></tr>`).join(''):'<tr><td colspan="5" style="color:var(--muted)">この画面で登録した販売はまだありません</td></tr>';
 }
 function addAnimal(){const id=+$('posAnimal').value,p=+$('posPrice').value;if(!id)return;if(!p){toast('販売価格を入れてください');return}
   const a=DB.animals.find(x=>x.id===id);cart.push({aid:id,label:`#${a.id} ${a.sp} ${a.name}${a.sex}`,price:p,cost:a.cost});$('posPrice').value='';renderPOS()}
 function addGoods(){const g=GOODS[+$('posGoods').value],q=Math.max(1,+$('posQty').value||1);cart.push({g:g.n,q,label:`${g.n}×${q}`,price:g.p*q,cost:g.c*q});renderPOS()}
 function checkout(){
+  if(!cart.length&&$('posAnimal').value&&+$('posPrice').value)addAnimal();
+  if(!cart.length){toast($('posAnimal').value?'販売価格を入れてください':'在庫に販売できる生体がありません');$('posPrice').focus();return}
   const cust=$('posCust').value.trim(),tx='t'+Date.now();
   cart.forEach(c=>{if(c.aid){DB.animals.find(a=>a.id===c.aid).sold={date:TODAY,price:c.price,pay:curPay,cust,tx}}else DB.goodsSales.push({date:TODAY,n:c.g,q:c.q,price:c.price,cost:c.cost,pay:curPay,tx})});
   const t=cart.reduce((s,c)=>s+c.price,0);cart=[];$('posCust').value='';save();renderAll();toast(`${payName(curPay)}で ${yen(t)} を登録しました`);
@@ -576,6 +584,9 @@ function renderImpLog(){const L=(DB.imports||[]).slice(0,5);
 function dlImpTemplate(){if(typeof XLSX==='undefined'){toast('Excel部品が読み込めていません');return}
   const ws=XLSX.utils.aoa_to_sheet([['仕入日','仕入先','種類','品目（モルフ）','性別','原価（税込）','匹数','支払方法','メモ'],[TODAY,'A爬虫類卸','ボールパイソン','Pastel Clown','♂',33000,1,'振込',''],[TODAY,'Bブリーダー','レオパ','マックスノー','♀',12100,2,'現金','']]);
   ws['!cols']=[12,14,14,22,6,12,6,12,20].map(w=>({wch:w}));const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'仕入');XLSX.writeFile(wb,'仕入取込テンプレート.xlsx')}
+
+function cancelSale(tx){if(!confirm('この会計を取り消して、生体を在庫に戻します。よろしいですか？'))return;
+  DB.animals.forEach(a=>{if(a.sold&&a.sold.tx===tx)delete a.sold});DB.goodsSales=DB.goodsSales.filter(g=>g.tx!==tx);save();renderAll();toast('販売を取り消しました')}
 
 /* ===== 仕入 ===== */
 function renderBuy(){
